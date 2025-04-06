@@ -15,6 +15,8 @@ import Syntax.WithProof
 
 %default total
 
+%hide Data.SOP.SOP.SOP
+
 data U = Val | Comp
 
 data Ty : Type -> U -> Type
@@ -148,8 +150,13 @@ record (<->) (a, b : Type) where
   inverseL  : (x : a) -> backwards (forwards x) === x
   inverseR  : (y : b) -> forwards (backwards y) === y
 
+-- Not having eta for records is getting in the way of me proving things about
+-- SOP from the sop package. So here's my own version...ish
+0 SOP : (a -> Type) -> List (List a) -> Type
+SOP f xs = NS_ (List a) (NP_ a f) xs
+
 Uninhabited (SOP f []) where
-  uninhabited (MkSOP sum) impossible
+  uninhabited sum impossible
 
 namespace TreeExample
   TreeF : ValTy tyvar -> tyvar -> ValTy tyvar
@@ -277,21 +284,22 @@ namespace TreeExample
     Rep = [] :: Rep {a}
     rep = MkIso {
       forwards = \case
-        Nothing => MkSOP (Z [])
-        Just x => MkSOP (S (unSOP (rep.forwards x))),
+        Nothing => Z []
+        Just x => S (rep.forwards x),
       backwards = \case
-        MkSOP (Z []) => Nothing
-        MkSOP (S sop) => Just (rep.backwards (MkSOP sop)),
+        Z [] => Nothing
+        S sop => Just (rep.backwards sop),
       inverseL = \case
         Nothing => Refl
         Just x =>
           cong Just $
-          let etaPrf = sopEta (rep.forwards x) in
-          replace {p = \sop => rep.backwards sop === x, x = rep.forwards x, y = MkSOP (unSOP (rep.forwards x))} (sym etaPrf) (rep.inverseL x),
+          --let etaPrf = sopEta (rep.forwards x) in
+          --replace {p = \sop => rep.backwards sop === x, x = rep.forwards x, y = rep.forwards x} (sym etaPrf)
+          (rep.inverseL x),
       inverseR = \case
-        MkSOP (Z []) => Refl
-        MkSOP (S sop) =>
-          cong (MkSOP . S . unSOP) $ rep.inverseR (MkSOP sop)
+        Z [] => Refl
+        S sop =>
+          cong S $ rep.inverseR sop
     }
 
   distributeSop : List a -> List (List a) -> List (List a)
@@ -303,20 +311,20 @@ namespace TreeExample
   cartesianSop (pa :: pas) sopb = distributeSop pa sopb ++ cartesianSop pas sopb
 
   leftSop : SOP f kss -> SOP f (kss ++ lss)
-  leftSop (MkSOP (Z a)) = MkSOP (Z a)
-  leftSop (MkSOP (S a)) = MkSOP (S (unSOP (leftSop $ MkSOP a)))
+  leftSop (Z a) = Z a
+  leftSop (S a) = S (leftSop a)
 
   rightSop : {lss : List (List a)} -> SOP f kss -> SOP f (lss ++ kss)
   rightSop {lss = []} x = x
-  rightSop {lss = ls :: lss} x = MkSOP (S (unSOP (rightSop x)))
+  rightSop {lss = ls :: lss} x = S (rightSop x)
 
   pairPSop : NP f ks -> SOP f kss -> SOP f (distributeSop ks kss)
-  pairPSop x (MkSOP (Z y)) = MkSOP (Z (append x y))
-  pairPSop x (MkSOP (S y)) = MkSOP (S (unSOP (pairPSop x (MkSOP y))))
+  pairPSop x (Z y) = Z (append x y)
+  pairPSop x (S y) = S (pairPSop x y)
 
   sopProduct : {kss, lss : List (List k)} -> SOP f kss -> SOP f lss -> SOP f (cartesianSop kss lss)
-  sopProduct {kss = .(ks :: kss)} (MkSOP (Z v)) y = leftSop (pairPSop v y)
-  sopProduct (MkSOP (S x)) y = rightSop (sopProduct (MkSOP x) y)
+  sopProduct {kss = .(ks :: kss)} (Z v) y = leftSop (pairPSop v y)
+  sopProduct (S x) y = rightSop (sopProduct x y)
 
   splitNs : (ks : List k) -> NS f (ks ++ ls) -> Either (NS f ks) (NS f ls)
   splitNs [] s = Right s
@@ -335,15 +343,15 @@ namespace TreeExample
   unpairPNs ks (x :: xs) (S s) = mapSnd S (unpairPNs _ _ s)
 
   unpairSop : (kss, lss : List (List k)) -> SOP f (cartesianSop kss lss) -> (SOP f kss, SOP f lss)
-  unpairSop (ks :: kss) (ls :: lss) (MkSOP (Z v)) =
-    bimap (MkSOP . Z) (MkSOP . Z) (unpairP v)
-  unpairSop (ks :: kss) (ls :: lss) (MkSOP (S x)) =
+  unpairSop (ks :: kss) (ls :: lss) (Z v) =
+    bimap Z Z (unpairP v)
+  unpairSop (ks :: kss) (ls :: lss) (S x) =
     either
       (\x =>
-        the (SOP f (ks :: kss), SOP f (ls :: lss)) $ let unpaired = unpairPNs _ _ x in (MkSOP (Z (fst unpaired)), MkSOP (S (snd unpaired))))
-      (\x => mapFst (MkSOP . S . unSOP) (unpairSop _ _ (MkSOP x))) $
+        the (SOP f (ks :: kss), SOP f (ls :: lss)) $ let unpaired = unpairPNs _ _ x in (Z (fst unpaired), (S (snd unpaired))))
+      (\x => mapFst S (unpairSop _ _ x)) $
       splitNs (distributeSop ks lss) x
-  unpairSop [] _ (MkSOP sop) impossible
+  unpairSop [] _ sop impossible
   unpairSop (ks :: kss) [] sop = absurd (snd (unpairSop kss [] sop))
 
   0 pairPBeta : (v : NP f ks) -> {x : NP f ls} -> unpairP (append v x) = (v, x)
@@ -374,54 +382,55 @@ namespace TreeExample
     replace {p = \up => append (fst (bimap (\arg => v :: arg) id up)) (snd (bimap (\arg => v :: arg) id up)) = v :: vs} (etaPair (unpairP vs)) $
     cong (v ::) $ pairPEta ks ls vs
 
-  0 leftSopBeta : {0 lss : List (List k)} -> (s : NS (NP f) kss) -> splitNs kss {ls = lss} (unSOP (leftSop {lss} (MkSOP s))) = Left s
+  0 leftSopBeta : {0 lss : List (List k)} -> (s : NS (NP f) kss) -> splitNs kss {ls = lss} (leftSop {lss} s) = Left s
   leftSopBeta (Z v) = Refl
   leftSopBeta {kss = .(_ :: kss)} (S x) =
     rewrite leftSopBeta {k, lss, f, kss} x in
     Refl
 
-  0 rightSopBeta : (kss : List (List k)) -> splitNs kss (unSOP (rightSop {lss = kss} sop)) = Right (unSOP sop)
+  0 rightSopBeta : (kss : List (List k)) -> splitNs kss (rightSop {lss = kss} sop) = Right sop
   rightSopBeta [] = Refl
   rightSopBeta (x :: xs) =
     rewrite rightSopBeta xs {sop} in
     Refl
 
-  0 pairPSopBeta : (x : NS (NP f) lss) -> unpairPNs ks lss (unSOP (pairPSop v (MkSOP x))) = (v, x)
+  0 pairPSopBeta : (x : NS (NP f) lss) -> unpairPNs ks lss (pairPSop v x) = (v, x)
   pairPSopBeta (Z x) =
     trans (cong (mapSnd Z) (pairPBeta v)) Refl
   pairPSopBeta (S x) = rewrite pairPSopBeta x {v} in Refl
 
   0 pairSopBeta : (sopA : SOP f kss) -> (sopB : SOP f lss) -> unpairSop kss lss (sopProduct sopA sopB) = (sopA, sopB)
-  pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (MkSOP (Z v)) (MkSOP (Z x)) =
-    trans (cong (bimap (MkSOP . Z) (MkSOP . Z)) (pairPBeta v)) Refl
-  pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (MkSOP (Z v)) (MkSOP (S x)) =
-    let lsb = leftSopBeta {lss = cartesianSop kss (ls :: lss), f, kss = distributeSop ks lss} (unSOP (pairPSop v (MkSOP x))) in
-    rewrite lsb in cong2 (,) (cong (MkSOP . Z . fst) $ pairPSopBeta x) (cong (MkSOP . S . snd) $ pairPSopBeta x)
-  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: lss)} (MkSOP (S x)) sopB@(MkSOP (Z v)) =
-    rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct (MkSOP x) sopB} in
-    rewrite sopEta (sopProduct (MkSOP x) sopB) in
-    rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: lss)} (MkSOP x) sopB in
-    Refl
-  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: ls2 :: lss)} (MkSOP (S x)) sopB@(MkSOP (S y)) =
-    rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct (MkSOP x) sopB} in
-    rewrite sopEta (sopProduct (MkSOP x) sopB) in
-    rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: ls2 :: lss)} (MkSOP x) sopB in
-    Refl
-  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .([_])} (MkSOP (S x)) (MkSOP (S y)) impossible
-  pairSopBeta {kss = .(ks :: [])} (MkSOP (S x)) (MkSOP y) impossible
-  pairSopBeta {kss = []} (MkSOP x) (MkSOP s) impossible
-  pairSopBeta {lss = []} (MkSOP x) (MkSOP s) impossible
+  pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (Z v) (Z x) =
+    ?ghjgh --trans (cong (bimap Z Z) (pairPBeta v)) Refl
+  pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (Z v) (S x) =
+    let lsb = leftSopBeta {lss = cartesianSop kss (ls :: lss), f, kss = distributeSop ks lss} (pairPSop v x) in
+    --rewrite lsb in
+    ?hgjg --cong2 (,) (cong (Z . fst) $ pairPSopBeta x) (cong (S . snd) $ pairPSopBeta x)
+  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: lss)} (S x) sopB@(Z v) =
+    --rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
+    --rewrite sopEta (sopProduct x sopB) in
+    --rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: lss)} x sopB in
+    ?hmghh --Refl
+  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: ls2 :: lss)} (S x) sopB@(S y) =
+    --rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
+    --rewrite sopEta (sopProduct x sopB) in
+    --rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: ls2 :: lss)} x sopB in
+    ?hjg --Refl
+  pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .([_])} (S x) (S y) impossible
+  pairSopBeta {kss = .(ks :: [])} (S x) y impossible
+  pairSopBeta {kss = []} x s impossible
+  pairSopBeta {lss = []} x s impossible
 
   0 pairSopEta : (kss, lss : List (List k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
-  pairSopEta [] [] (MkSOP x) impossible
-  pairSopEta [] (y :: xs) (MkSOP x) impossible
+  pairSopEta [] [] x impossible
+  pairSopEta [] (y :: xs) x impossible
   pairSopEta (y :: xs) [] x = absurd (snd (unpairSop xs [] x))
-  pairSopEta (y :: xs) (z :: ys) (MkSOP (Z p)) =
-    rewrite sym $ etaPair {a = NP f y, b = NP f z} (unpairP p) in
-    cong (MkSOP . Z) $ pairPEta _ _ p
-  pairSopEta (y :: xs) (z :: ys) (MkSOP (S s)) with (splitNs (distributeSop y ys) s) proof prf
-    pairSopEta (y :: xs) (z :: ys) (MkSOP (S s)) | Left distSop = cong (MkSOP . S) ?ghf
-    pairSopEta (y :: xs) (z :: ys) (MkSOP (S s)) | Right cartSop =
+  pairSopEta (y :: xs) (z :: ys) (Z p) =
+    --rewrite sym $ etaPair {a = NP f y, b = NP f z} (unpairP p) in
+    ?hgjghj --cong Z $ pairPEta _ _ p
+  pairSopEta (y :: xs) (z :: ys) (S s) with (splitNs (distributeSop y ys) s) proof prf
+    pairSopEta (y :: xs) (z :: ys) (S s) | Left distSop = ?jghj --cong S ?ghf
+    pairSopEta (y :: xs) (z :: ys) (S s) | Right cartSop =
     -- sopProduct (fst (either (Delay (\x => the (SOP f (y :: xs), SOP f (z :: ys)) (let unpaired = unpairPNs y ys x in (MkSOP (Z (fst unpaired)), MkSOP (S (snd unpaired)))))) (Delay (\x => mapFst (MkSOP . (S . unSOP)) (unpairSop xs (z :: ys) (MkSOP x)))) (splitNs (distributeSop y ys) s))) (snd (either (Delay (\x => the (SOP f (y :: xs), SOP f (z :: ys)) (let unpaired = unpairPNs y ys x in (MkSOP (Z (fst unpaired)), MkSOP (S (snd unpaired)))))) (Delay (\x => mapFst (MkSOP . (S . unSOP)) (unpairSop xs (z :: ys) (MkSOP x)))) (splitNs (distributeSop y ys) s))) = MkSOP (S s)
       ?ghf_5
 
