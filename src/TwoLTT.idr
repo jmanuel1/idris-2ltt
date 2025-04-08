@@ -518,34 +518,29 @@ namespace TreeExample
         trans recInverseR $ pairSopEta _ _ x
     }
 
-    {-
   0 Fun_SOPLift : U_SOP tyvar -> Ty tyvar u -> VarTy tyvar -> Type
   Fun_SOPLift [] r _ = ()
   Fun_SOPLift (a :: b) r var = (lift (snd $ foldr (\d, uc => (Comp ** Fun d $ snd uc)) (the (u : U ** Ty tyvar u) (u ** r)) a) var, Fun_SOPLift b r var)
 
-  covering
   tabulate : {a : _} -> (El_SOP a var -> lift r var) -> Fun_SOPLift a r var
   tabulate {a = []} f = ()
-  tabulate {a = ([] :: xs)} f = (f $ MkSOP $ Z [], tabulate {a = xs} $ \(MkSOP sop) => f (MkSOP $ S sop))
+  tabulate {a = ([] :: xs)} f = (f $ Z [], tabulate {a = xs} $ \sop => f (S sop))
   tabulate {a = ((x :: ys) :: xs)} f =
-    let rec = TreeExample.tabulate $ \(MkSOP sop) => f (MkSOP $ S sop)
-        rec2 = \x => tabulate {a = (ys :: xs)} $ \(MkSOP sop) => f $ MkSOP $ case sop of
+    let rec = TreeExample.tabulate $ \sop => f (S sop)
+        rec2 = \x => tabulate {a = (ys :: xs)} $ \sop => f $ case sop of
           Z p => Z (x :: p)
           S p => S p in
     (Lam _ $ \arg => (fst $ rec2 (Var arg)), rec)
 
-  covering
   index : {a : _} -> Fun_SOPLift a r var -> (El_SOP a var -> lift r var)
-  index {a = []} fs = absurd
-  index {a = ([] :: xs)} (res, fs) = \case
-    MkSOP (Z _) => res
-    MkSOP (S p) => index fs (MkSOP p)
-  index {a = ((x :: ys) :: xs)} (f, fs) = \case
-    MkSOP (Z (first :: rest)) =>
-      let app = App f first
-          rec = index {a = (ys :: xs)} (app, fs) in
-      rec (MkSOP (Z rest))
-    MkSOP (S p) => index fs (MkSOP p)
+  index {a = []} fs s = absurd s
+  index {a = ([] :: xs)} (res, fs) (Z _) = res
+  index {a = ([] :: xs)} (res, fs) (S p) = index fs p
+  index {a = ((x :: ys) :: xs)} (f, fs) (Z (first :: rest)) =
+    let app = App f first
+        rec = index {a = (ys :: xs)} (app, fs) in
+    rec (Z rest)
+  index {a = ((x :: ys) :: xs)} (f, fs) (S p) = index fs p
 
   %unbound_implicits off
   genFun_SOPLift : {0 tyvar : Type} -> {a : U_SOP tyvar} -> {v : U} -> {r : Ty tyvar v} -> {0 u : U} -> {0 var : VarTy tyvar} -> Fun_SOPLift a r var -> Gen u var (Fun_SOPLift a r var)
@@ -556,7 +551,6 @@ namespace TreeExample
   interface Monad m => MonadJoin m where
     join : IsSOP a => m a -> m a
 
-  covering
   {u : U} -> MonadJoin (Gen u var) where
     join ma = MkGen $ \k => runGen $ do
       joinPoints <- genFun_SOPLift (tabulate (k . rep.backwards))
