@@ -497,7 +497,6 @@ namespace TreeExample
       trans (cong (S . rightSop) (pairSopEta _ _ cartSop)) $
       cong S $ splitRightInvert _ _ _ prf
 
-  {-}
   -- https://github.com/AndrasKovacs/staged/blob/fe63229afeaec8caad3f46e1a33337fdab712982/icfp24paper/supplement/agda-cftt/SOP.agda#L286
   IsSOP a => IsSOP b => IsSOP (a, b) where
     Rep = cartesianSop (Rep {a}) (Rep {a = b})
@@ -516,7 +515,7 @@ namespace TreeExample
         let fstInverseR = rep.inverseR (fst (unpairSop (Rep {a}) (Rep {a = b}) x))
             sndInverseR = rep.inverseR (snd (unpairSop (Rep {a}) (Rep {a = b}) x))
             recInverseR = cong2 sopProduct fstInverseR sndInverseR in
-        trans recInverseR ?h4
+        trans recInverseR $ pairSopEta _ _ x
     }
 
     {-
