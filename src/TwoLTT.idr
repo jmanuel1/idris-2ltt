@@ -2,12 +2,15 @@
 ||| https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/agda-opsem/Interpreter.agda
 module TwoLTT
 
+import Control.Function
 import Control.Monad.Maybe
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.Either
 import Data.List
 import Data.List.Elem
 import Data.List.Quantifiers
+import Data.Nat
 import Data.SOP
 import Data.Vect
 import Data.Vect.Elem
@@ -346,11 +349,10 @@ namespace TreeExample
   unpairSop (ks :: kss) (ls :: lss) (Z v) =
     bimap Z Z (unpairP v)
   unpairSop (ks :: kss) (ls :: lss) (S x) =
-    either
-      (\x =>
-        the (SOP f (ks :: kss), SOP f (ls :: lss)) $ let unpaired = unpairPNs _ _ x in (Z (fst unpaired), (S (snd unpaired))))
-      (\x => mapFst S (unpairSop _ _ x)) $
-      splitNs (distributeSop ks lss) x
+    case splitNs (distributeSop ks lss) x of
+      Left x =>
+        let unpaired = unpairPNs _ _ x in (Z (fst unpaired), (S (snd unpaired)))
+      Right x => mapFst S (unpairSop _ _ x)
   unpairSop [] _ sop impossible
   unpairSop (ks :: kss) [] sop = absurd (snd (unpairSop kss [] sop))
 
@@ -401,38 +403,99 @@ namespace TreeExample
 
   0 pairSopBeta : (sopA : SOP f kss) -> (sopB : SOP f lss) -> unpairSop kss lss (sopProduct sopA sopB) = (sopA, sopB)
   pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (Z v) (Z x) =
-    ?ghjgh --trans (cong (bimap Z Z) (pairPBeta v)) Refl
+    trans (cong (bimap Z Z) (pairPBeta v)) Refl
   pairSopBeta {kss = .(ks :: kss), lss = .(ls :: lss)} (Z v) (S x) =
     let lsb = leftSopBeta {lss = cartesianSop kss (ls :: lss), f, kss = distributeSop ks lss} (pairPSop v x) in
-    --rewrite lsb in
-    ?hgjg --cong2 (,) (cong (Z . fst) $ pairPSopBeta x) (cong (S . snd) $ pairPSopBeta x)
+    rewrite lsb in
+    cong2 (,) (cong (Z . fst) $ pairPSopBeta x) (cong (S . snd) $ pairPSopBeta x)
   pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: lss)} (S x) sopB@(Z v) =
-    --rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
-    --rewrite sopEta (sopProduct x sopB) in
-    --rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: lss)} x sopB in
-    ?hmghh --Refl
+    rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
+    rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: lss)} x sopB in
+    Refl
   pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .(ls :: ls2 :: lss)} (S x) sopB@(S y) =
-    --rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
-    --rewrite sopEta (sopProduct x sopB) in
-    --rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: ls2 :: lss)} x sopB in
-    ?hjg --Refl
+    rewrite rightSopBeta (distributeSop ks lss) {sop = sopProduct x sopB} in
+    rewrite pairSopBeta {kss = (ks2 :: kss), lss = (ls :: ls2 :: lss)} x sopB in
+    Refl
   pairSopBeta {kss = .(ks :: ks2 :: kss), lss = .([_])} (S x) (S y) impossible
   pairSopBeta {kss = .(ks :: [])} (S x) y impossible
   pairSopBeta {kss = []} x s impossible
   pairSopBeta {lss = []} x s impossible
 
+  0 pairPSopEta : (ys : List (List k)) -> (distSop : SOP f (distributeSop y ys)) -> pairPSop (fst (unpairPNs y ys distSop)) (snd (unpairPNs y ys distSop)) = distSop
+  pairPSopEta [] distSop impossible
+  pairPSopEta (x :: xs) (Z p) =
+    rewrite sym $ etaPair {a = NP f y, b = NP f x} (unpairP p) in
+    cong Z $
+    pairPEta _ _ p
+  pairPSopEta (x :: xs) (S s) =
+    rewrite sym $ etaPair (unpairPNs y xs s) in
+    cong S $
+    pairPSopEta xs s
+
+  bimapLeftInvert : (x : Either _ _) -> {0 y : _} -> bimap f g x = Left y -> (z : _ ** x = Left z)
+  bimapLeftInvert (Left x) prf = (x ** Refl)
+  bimapLeftInvert (Right _) Refl impossible
+
+  bimapRightInvert : (x : Either _ _) -> {0 y : _} -> bimap f g x = Right y -> (z : _ ** x = Right z)
+  bimapRightInvert (Right _) prf = (_ ** Refl)
+
+  Injective (NS.S {f, ks, t}) where
+    injective Refl = Refl
+
+  splitLeftInvert :
+    (xs : List (List k)) ->
+    (ys : List (List k)) ->
+    (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
+    {distSop : SOP f ys} ->
+    splitNs ys {ls = xs} s = Left distSop ->
+    leftSop {lss = xs, kss = ys} distSop = s
+  splitLeftInvert xs [] s prf impossible
+  splitLeftInvert xs (x :: ys) (Z s) {distSop = Z s} Refl = Refl
+  splitLeftInvert xs (x :: ys) (S s) {distSop = Z p} prf with (splitNs ys s)
+    _ | Left _ impossible
+    _ | Right _ impossible
+  splitLeftInvert xs (x :: ys) (Z s) {distSop = S distSop} prf impossible
+  splitLeftInvert xs (x :: ys) (S s) {distSop = S distSop} prf =
+    let (z ** invertPrf) = bimapLeftInvert (splitNs ys s) prf
+        helperPrf = inj @{ComposeInjective {f = NS.S, g = Left}} (Left . S) $ trans (sym prf) $ cong (bimap S id) invertPrf in
+    cong S $
+    splitLeftInvert xs _ {k, f, distSop} s $
+    trans invertPrf $
+    cong Left (sym helperPrf)
+
+  splitRightInvert :
+    (xs : List (List k)) ->
+    (ys : List (List k)) ->
+    (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
+    {sop : SOP f xs} ->
+    splitNs ys {ls = xs} s = Right sop ->
+    rightSop {lss = ys, kss = xs} sop = s
+  splitRightInvert [] _ _ _ impossible
+  splitRightInvert (x :: xs) [] s Refl = Refl
+  splitRightInvert (x :: xs) (y :: ys) (Z v) prf impossible
+  splitRightInvert (x :: xs) (y :: ys) (S z) prf =
+    let (w ** invertPrf) = bimapRightInvert (splitNs ys z) prf
+        helperPrf = inj Right $ trans (sym prf) $ cong (bimap S id) invertPrf in
+    cong S $
+    splitRightInvert (x :: xs) _ z $
+    trans invertPrf $
+    sym $ cong Right helperPrf
+
   0 pairSopEta : (kss, lss : List (List k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
-  pairSopEta [] [] x impossible
-  pairSopEta [] (y :: xs) x impossible
+  pairSopEta [] _ x impossible
   pairSopEta (y :: xs) [] x = absurd (snd (unpairSop xs [] x))
   pairSopEta (y :: xs) (z :: ys) (Z p) =
-    --rewrite sym $ etaPair {a = NP f y, b = NP f z} (unpairP p) in
-    ?hgjghj --cong Z $ pairPEta _ _ p
+    rewrite sym $ etaPair {a = NP f y, b = NP f z} (unpairP p) in
+    cong Z $ pairPEta _ _ p
   pairSopEta (y :: xs) (z :: ys) (S s) with (splitNs (distributeSop y ys) s) proof prf
-    pairSopEta (y :: xs) (z :: ys) (S s) | Left distSop = ?jghj --cong S ?ghf
-    pairSopEta (y :: xs) (z :: ys) (S s) | Right cartSop =
-    -- sopProduct (fst (either (Delay (\x => the (SOP f (y :: xs), SOP f (z :: ys)) (let unpaired = unpairPNs y ys x in (MkSOP (Z (fst unpaired)), MkSOP (S (snd unpaired)))))) (Delay (\x => mapFst (MkSOP . (S . unSOP)) (unpairSop xs (z :: ys) (MkSOP x)))) (splitNs (distributeSop y ys) s))) (snd (either (Delay (\x => the (SOP f (y :: xs), SOP f (z :: ys)) (let unpaired = unpairPNs y ys x in (MkSOP (Z (fst unpaired)), MkSOP (S (snd unpaired)))))) (Delay (\x => mapFst (MkSOP . (S . unSOP)) (unpairSop xs (z :: ys) (MkSOP x)))) (splitNs (distributeSop y ys) s))) = MkSOP (S s)
-      ?ghf_5
+    _ | Left distSop =
+      cong S $
+      rewrite pairPSopEta {y} ys distSop in
+      splitLeftInvert _ _ _ prf
+    _ | Right cartSop =
+      rewrite sym $ etaPair (unpairSop xs (z :: ys) cartSop) in
+      trans (cong (S . rightSop) (pairSopEta _ _ cartSop)) $
+      cong S $ splitRightInvert _ _ _ prf
 
   {-}
   -- https://github.com/AndrasKovacs/staged/blob/fe63229afeaec8caad3f46e1a33337fdab712982/icfp24paper/supplement/agda-cftt/SOP.agda#L286
