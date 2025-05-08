@@ -1,2 +1,5 @@
 build/
 *.*~
+
+# c
+.ccls-cache/
