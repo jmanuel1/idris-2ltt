@@ -15,81 +15,12 @@ import Data.SOP
 import Data.Vect
 import Data.Vect.Quantifiers
 import Syntax.WithProof
+import TwoLTT.Expr
 import TwoLTT.Types
 
 %default total
 
 %hide Data.SOP.SOP.SOP
-
-0 VarTy : Type
-VarTy = (0 u : U) -> Ty' u -> Type
-
--- http://adam.chlipala.net/papers/PhoasICFP08/PhoasICFP08.pdf, figure 9
-data Sub : (0 t1 : var -> Ty var Val) -> Ty var Val -> Ty var Val -> Type where
-  [search t1]
-  SubFix : (t1 : var -> var -> Ty var Val) -> (forall a. Sub (\a' => t1 a' a) t (t1' a)) -> Sub (\a => Fix (t1 a)) t (Fix t1')
-  -- NOTE: Avoid trying to unify against a `map` call by having t2s return the
-  -- whole list. The unifier likes this a lot better (see definition of
-  -- `TreeExample.leaf`).
-  SubSum : Sub t1 t t1' -> (t2s : var -> Vect n (Ty var Val)) -> Sub (\a => Sum (t2s a)) t (Sum t2s') -> Sub (\a => Sum (t1 a :: t2s a)) t (Sum (t1' :: t2s'))
-  SubProd : Sub t1 t t1' -> (t2s : var -> Vect n (Ty var Val)) -> Sub (\a => Product (t2s a)) t (Product t2s') -> Sub (\a => Product (t1 a :: t2s a)) t (Product (t1' :: t2s'))
-  SubReplace : Sub (\a => TyVar a) t t
-  SubConst : Sub (\_ => t1) t t1
-  SubNewtype : Sub t1 t t1' -> Sub (\a => Newtype tag (t1 a)) t (Newtype tag t1')
-
--- http://adam.chlipala.net/papers/PhoasICFP08/PhoasICFP08.pdf
-data Expr : VarTy -> Ty' u -> Type where
-  LetRec : {0 var : VarTy} -> {0 ty : Ty' u} -> (0 a : Ty' Comp) -> (t : var _ a -> Expr var a) -> (u : var _ a -> Expr var ty) -> Expr var ty
-  Let : {0 var : VarTy} -> (0 a : Ty' u) -> {0 ty : Ty' v} -> (t : Expr var a) -> (u : var _ a -> Expr var ty) -> Expr var ty
-  -- Not having multi-way case in syntax so that Idris can see totality of Expr
-  Absurd : {0 xs : forall tv. Vect 0 (Ty tv Val)} -> Expr var (Sum xs) -> {0 a : Ty' u} -> Expr var a
-  Match :
-    {0 a : Ty' u} ->
-    {0 ds : forall tv. Vect (S n) (Ty tv Val)} ->
-    Expr var (Sum ds) ->
-    (var _ (head ds) -> Expr var a) ->
-    (var _ (Sum $ tail ds) -> Expr var a) ->
-    Expr var a
-  Lam : {0 var : VarTy} -> (0 a : Ty' Val) -> {0 b : Ty' u} -> (t : var _ a -> Expr var b) -> Expr var (Fun a b)
-  Var : {0 var : VarTy} -> {0 ty : Ty' u} -> var _ ty -> Expr var ty
-  App : {0 a : Ty' Val} -> {0 b : Ty' u} -> (f : Expr var (Fun a b)) -> (arg : Expr var a) -> Expr var b
-  Left :
-    {0 var : VarTy} ->
-    {0 a : Ty' Val} ->
-    {0 b : forall tv. Vect n (Ty tv Val)} ->
-    Expr var a ->
-    Expr var (Sum (a :: b))
-  Right :
-    {0 var : VarTy} ->
-    {0 a : Ty' Val} ->
-    {0 b : forall tv. Vect n (Ty tv Val)} ->
-    Expr var (Sum b) ->
-    Expr var (Sum (a :: b))
-  TT : Expr var One
-  Prod :
-    {0 a : Ty' Val} ->
-    {0 b : forall tv. Vect n (Ty tv Val)} ->
-    Expr var a ->
-    Expr var (Product b) ->
-    Expr var (Product (a :: b))
-  First :
-    {0 a : Ty' Val} ->
-    {0 as : forall tv. Vect n (Ty tv Val)} ->
-    Expr var (Product (a :: as)) ->
-    Expr var a
-  Rest :
-    {0 a : Ty' Val} ->
-    {0 as : forall tv. Vect n (Ty tv Val)} ->
-    Expr var (Product (a :: as)) ->
-    Expr var (Product as)
-  -- Represent coercions explicitly in syntax
-  Wrap : (0 tag : Type) -> {0 a : Ty' u} -> Expr var a -> Expr var (Newtype tag a)
-  Unwrap : {0 a : Ty' u} -> Expr var (Newtype tag a) -> Expr var a
-  Roll : {0 unroll : Ty' Val} -> {0 f : forall tv. tv -> Ty tv Val} -> Expr var unroll -> (0 sub : forall var. Sub {var} f (Fix f) unroll) -> Expr var (Fix f)
-  Unroll : {0 unroll : Ty' Val} -> {0 f : forall tv. tv -> Ty tv Val} -> Expr var (Fix f) -> (0 sub : forall var. Sub {var} f (Fix f) unroll) -> Expr var unroll
-
-0 Expr' : Ty' u -> Type
-Expr' ty = forall var. Expr var ty
 
 0 CaseArms : {n : Nat} -> (0 ds : forall tyvar. Vect n (Ty tyvar Val)) -> VarTy -> Ty' u -> Vect n Type
 CaseArms {n = 0} _ var mot = []
@@ -101,44 +32,42 @@ Case e [] =
   Absurd e
 Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)
 
-0 lift : Ty' u -> VarTy -> Type
-lift a var = Expr var a
-
 record Gen (0 u : U) (0 var : VarTy) (a : Type) where
   constructor MkGen
-  unGen : {0 r : Ty' u} -> (a -> Expr var r) -> Expr var r
+  -- `r` is explicit because of https://github.com/idris-lang/Idris2/issues/3533.
+  unGen : (0 r : Ty' u) -> (a -> Expr var r) -> Expr var r
 
-runGen : {0 a : Ty' u} -> Gen u var (lift a var) -> lift a var
-runGen gen = unGen gen id
+runGen : {0 a : Ty' u} -> Gen u var (Expr var a) -> Expr var a
+runGen gen = unGen gen _ id
 
-gen : {0 a : Ty' v} -> Expr var a -> Gen u var (Expr var a)
-gen e = MkGen $ \k => Let _ e (\x => k (Var x))
+gen : {v : U} -> {0 a : Ty' v} -> Expr var a -> Gen u var (Expr var a)
+gen e = MkGen $ \_, k => Let _ e (\x => k (Var x))
 
 interface Monad m => MonadGen (0 u : U) (0 var : VarTy) m | m where
   liftGen : Gen u var a -> m a
 
 Functor (Gen u var) where
-  map f fa = MkGen $ \k => unGen fa $ \fa => k (f fa)
+  map f fa = MkGen $ \_, k => unGen fa _ $ \fa => k (f fa)
 
 Applicative (Gen u var) where
-  pure a = MkGen $ \k => k a
-  fa <*> a = MkGen $ \k => unGen fa $ \fa => unGen a $ \a => k (fa a)
+  pure a = MkGen $ \_, k => k a
+  fa <*> a = MkGen $ \_, k => unGen fa _ $ \fa => unGen a _ $ \a => k (fa a)
 
 covering
 Monad (Gen u var) where
-  m >>= f = MkGen $ \k => unGen m (\a => unGen (f a) k)
+  m >>= f = MkGen $ \_, k => unGen m _ (\a => unGen (f a) _ k)
 
 MonadGen u var (Gen u var) where
   liftGen gen = gen
 
 -- https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/haskell-cftt/CFTT/Improve.hs#L17
 interface MonadGen Val var m => Improve (0 var : VarTy) (0 f : forall tyvar. Ty tyvar Val -> Ty tyvar u) (0 m : Type -> Type) | m where
-  up : {0 a : Ty' Val} -> lift (f a) var -> m (lift a var)
-  down : {0 a : Ty' Val} -> m (lift a var) -> lift (f a) var
+  up : {0 a : Ty' Val} -> Expr var (f a) -> m (Expr var a)
+  down : {0 a : Ty' Val} -> m (Expr var a) -> Expr var (f a)
 
 interface Split (0 a : Ty' Val) where
   0 SplitTo : VarTy -> Type
-  split : {0 var : VarTy} -> lift a var -> Gen Val var (SplitTo var)
+  split : {0 var : VarTy} -> Expr var a -> Gen Val var (SplitTo var)
 
 data IdentityTag : Type where
 
@@ -147,14 +76,14 @@ Identity a = Newtype IdentityTag a
 
 Improve var Identity (Gen Val var) where
   up x = pure (Unwrap x)
-  down x = unGen x (Wrap _)
+  down x = unGen x _ (Wrap _)
 
 List : Ty tyvar Val -> Ty tyvar Val
 List a = Fix (\list => Sum [One, Product [a, TyVar list]])
 
 {0 a : Ty' Val} -> Split (List a) where
-  SplitTo var = Maybe (lift a var, lift (List a) var)
-  split as = MkGen $ \k =>
+  SplitTo var = Maybe (Expr var a, Expr var (List a))
+  split as = MkGen $ \_, k =>
     Case (Unroll as %search) [
       \_ => k Nothing,
       \cons => k (Just (First (Var {ty = Product [a, List a]} cons), First (Rest (Var {ty = Product [a, List a]} cons))))
@@ -197,7 +126,7 @@ namespace TreeExample
 
   {0 a : Ty' Val} -> Split (Tree a) where
     SplitTo var = TreeSplit var a
-    split as = MkGen $ \k =>
+    split as = MkGen $ \_, k =>
       Case (Unroll as %search) [\_ => k Leaf, \node => k (Node (First (Var node)) (First (Rest (Var node))) (First (Rest (Rest (Var node)))))]
 
   Nat : Ty tyVar Val
@@ -219,7 +148,7 @@ namespace TreeExample
 
   {0 a : Ty' Val} -> Split (Maybe a) where
     SplitTo var = Maybe (Expr var a)
-    split ma = MkGen $ \k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
+    split ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
 
   data MaybeTTag : Type where
 
@@ -248,13 +177,13 @@ namespace TreeExample
       Just a => pure (just a)
 
   fail : {0 f : forall var. Ty var Val -> Ty var u} -> Improve var f m => {0 a : Ty' Val} -> Expr var (MaybeT f a)
-  fail = down @{improveMaybeInstance} {f = MaybeT f, m = MaybeT m} nothing
+  fail = down @{improveMaybeInstance} {m = MaybeT m} nothing
 
   MonadGen u var m => MonadGen u var (StateT s m) where
     liftGen = lift . liftGen
 
   [improveStateInstance]
-  {0 f : forall var. Ty var Val -> Ty var Val} -> {0 s : Ty' Val} -> Improve var f m => Improve var (StateT s f) (StateT (lift s var) m) where
+  {0 f : forall var. Ty var Val -> Ty var Val} -> {0 s : Ty' Val} -> Improve var f m => Improve var (StateT s f) (StateT (Expr var s) m) where
     up x = ST $ \s => do
       h <- up {m = m} (App (Unwrap x) s)
       pure (First (Rest h), First h)
@@ -275,11 +204,11 @@ namespace TreeExample
 
   Split Bool where
     SplitTo var = Bool
-    split b = MkGen $ \k => Case (Unwrap b) [\_ => k True, \_ => k False]
+    split b = MkGen $ \_, k => Case (Unwrap b) [\_ => k True, \_ => k False]
 
   Split Nat where
     SplitTo var = Maybe (Expr var Nat)
-    split n = MkGen $ \k => Case (Unroll n %search) [\_ => k Nothing, \n' => k (Just (Var n'))]
+    split n = MkGen $ \_, k => Case (Unroll n %search) [\_ => k Nothing, \n' => k (Just (Var n'))]
 
   (==) : Expr var (Fun Nat (Fun Nat Bool))
   (==) = flip (LetRec _) Var $ \eq =>
@@ -288,7 +217,7 @@ namespace TreeExample
         case (!(split (Var n)), !(split (Var m))) of
           (Nothing, Nothing) => pure true
           (Just n', Just m') => pure $ App (App (Var eq) n') m'
-          _ => pure false) id
+          _ => pure false) _ id
 
   0 U_SOP : Type
   U_SOP = List (List (Ty' Val))
@@ -535,9 +464,17 @@ namespace TreeExample
         trans recInverseR $ pairSopEta _ _ x
     }
 
+  MultiArgFunU : List _ -> U -> U
+  MultiArgFunU [] = id
+  MultiArgFunU _ = const Comp
+
+  MultiArgFun : (args : List (Ty' Val)) -> Ty' u -> Ty' (MultiArgFunU args u)
+  MultiArgFun [] ret = ret
+  MultiArgFun (arg :: args) ret = Fun arg (MultiArgFun args ret)
+
   0 Fun_SOPLift : U_SOP -> Ty' u -> VarTy -> Type
   Fun_SOPLift [] r _ = ()
-  Fun_SOPLift (a :: b) r var = (Expr var (DPair.snd {a = U, p = Ty'} $ foldr {elem = Ty' Val, acc = (u : U ** Ty' u)} (\d, uc => (Comp ** Fun d $ snd uc)) (u ** r) a), Fun_SOPLift b r var)
+  Fun_SOPLift (a :: b) r var = (Expr var (MultiArgFun a r), Fun_SOPLift b r var)
 
   tabulate : {a : _} -> {0 r : Ty' u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
   tabulate {a = []} f = ()
@@ -550,7 +487,7 @@ namespace TreeExample
             S p => S p in
     (Lam _ (fst . rec2 . Var), rec)
 
-  index : {a : _} -> {0 r : Ty' u} -> Fun_SOPLift a r var -> (El_SOP a var -> lift r var)
+  index : {a : _} -> {0 r : Ty' u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
   index {a = []} fs s = absurd s
   index {a = ([] :: xs)} (res, fs) (Z _) = res
   index {a = ([] :: xs)} (res, fs) (S p) = index fs p
@@ -561,16 +498,24 @@ namespace TreeExample
   index {a = ((x :: ys) :: xs)} (f, fs) (S p) = index fs p
 
   %unbound_implicits off
-  genFun_SOPLift : {a : U_SOP} -> {0 v : U} -> {0 r : Ty' v} -> {0 u : U} -> {0 var : VarTy} -> Fun_SOPLift a r var -> Gen u var (Fun_SOPLift a r var)
+  genFun_SOPLift :
+    {a : U_SOP} ->
+    {v : U} ->
+    {0 r : Ty' v} -> -- why unerased?
+    {0 u : U} ->
+    {0 var : VarTy} ->
+    Fun_SOPLift a r var ->
+    Gen u var (Fun_SOPLift a r var)
   genFun_SOPLift {a = []} () = pure ()
-  genFun_SOPLift {a = (_ :: a)} (f, fs) = [| (gen f, genFun_SOPLift fs) |]
+  genFun_SOPLift {a = (ps :: a)} (f, fs) = [| (,) (gen f) (genFun_SOPLift fs) |]
   %unbound_implicits on
 
   interface Monad m => MonadJoin var m | m where
     join : IsSOP var a => m a -> m a
 
-  MonadJoin var (Gen u var) where
-    join ma = MkGen $ \k => runGen $ do
+
+  {u : U} -> MonadJoin var (Gen u var) where
+    join ma = MkGen $ \_, k => runGen $ do
       joinPoints <- genFun_SOPLift (tabulate (k . rep.backwards))
       a <- ma
       pure $ index joinPoints (rep.forwards a)
@@ -601,7 +546,7 @@ namespace TreeExample
   f =
     LetRec _ (\f =>
       Lam (Tree Nat) $ \t => down @{improveStateInstance @{improveMaybeInstance}} $ do
-        treeSplit <- liftGen {m = StateT (lift (List Nat) var) (MaybeT (Gen Val var))} $ split (the (Expr var (Tree Nat)) $ Var t)
+        treeSplit <- liftGen {m = StateT (Expr var (List Nat)) (MaybeT (Gen Val var)), var} $ split {var} (the (Expr var (Tree Nat)) $ Var t)
         case treeSplit of
           Leaf => pure leaf
           Node n l r => do
@@ -610,7 +555,7 @@ namespace TreeExample
               True => lift nothing
               False => pure ()
             ns <- State.get
-            n <- TreeExample.join $ case !(liftGen $ split $ the (Expr var (List Nat)) ns) of
+            n <- TreeExample.join {var} $ case !(liftGen {var} $ split {var} $ the (Expr var (List Nat)) ns) of
               Nothing => pure n
               Just (n, ns) => do
                 put ns
