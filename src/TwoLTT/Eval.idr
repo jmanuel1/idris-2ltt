@@ -87,16 +87,16 @@ headMap (x :: xs) = Refl
 tailMap (x :: xs) = Refl
 
 covering
-eval : {u : U} -> {0 ty : Ty' u} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
+eval : {u : U} -> {0 ty : Ty Type u} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
 
 covering
-evalComp : {0 ty : Ty' Comp} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
+evalComp : {0 ty : Ty Type Comp} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
 
 covering
-evalVal : {0 ty : Ty' Val} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
+evalVal : {0 ty : Ty Type Val} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
 
 covering
-{0 xs : forall tv. Vect 0 (Ty tv Val)} -> Uninhabited (Expr (\u, ty => interpTy ty) (Sum xs)) where
+Uninhabited (Expr (\u, ty => interpTy ty) (Sum [])) where
   uninhabited (LetRec a t u) =
     let t' = fix (\x => evalComp (t x))
     in absurd (u t')
@@ -108,14 +108,14 @@ covering
     let x' = evalVal x
     in elimAny (\l => absurd $ f $ replace {p = id} (headMap {f = interpValTy} ds) l) (\r => absurd $ g $ replace {p = Any id} (tailMap {f = interpValTy} ds) r) x'
   uninhabited (Var x) =
-    absurd $ replace {p = Any id . map interpTy} (invertVectZ (xs {tv = Type})) x
-  uninhabited (App f arg) = absurd (replace {p = Any id . map interpTy} (invertVectZ (xs {tv = Type})) $ evalComp f [eval arg])
-  uninhabited (First x) = absurd (replace {p = Any id . map interpTy} (invertVectZ (xs {tv = Type})) $ head $ evalVal x)
-  uninhabited (Unwrap x) = absurd (replace {p = Any id . map interpTy} (invertVectZ (xs {tv = Type})) $ evalVal x)
+    absurd x
+  uninhabited (App f arg) = absurd (evalComp f [eval arg])
+  uninhabited (First x) = absurd (head $ evalVal x)
+  uninhabited (Unwrap x) = absurd (evalVal x)
   uninhabited (Unroll {f} x sub) =
     let x' = unroll $ evalVal x
     in void $
-    case subFixZeroConst (replace {p = Sub f (Fix f) . Sum} (invertVectZ (xs {tv = Type})) $ sub {var = Type}) of
+    case subFixZeroConst sub of
       (prf, _) => absurd $ replace {p = \f => interpTy (f (Fix (\t => interpTy (f t))))} prf x'
 
 evalVal (LetRec a t u) =

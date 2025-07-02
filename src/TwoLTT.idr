@@ -1,5 +1,6 @@
 ||| https://andraskovacs.github.io/pdfs/2ltt_icfp24.pdf
 ||| https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/agda-opsem/Interpreter.agda
+
 module TwoLTT
 
 import Control.Function
@@ -22,28 +23,28 @@ import TwoLTT.Types
 
 %hide Data.SOP.SOP.SOP
 
-0 CaseArms : {n : Nat} -> (0 ds : forall tyvar. Vect n (Ty tyvar Val)) -> VarTy -> Ty' u -> Vect n Type
+0 CaseArms : {n : Nat} -> (0 ds : Vect n (Ty tyvar Val)) -> VarTy tyvar -> Ty tyvar u -> Vect n Type
 CaseArms {n = 0} _ var mot = []
 CaseArms {n = S n} ds var mot =
   (var _ (head ds) -> Expr var mot) :: CaseArms (tail ds) var mot
 
-Case : {0 var : VarTy} -> {0 n : Nat} -> {0 ds : forall tv. Vect n (Ty tv Val)} -> {0 motive : Ty' u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
-Case e [] =
-  Absurd e
+Case : {0 var : VarTy tv} -> {0 n : Nat} -> {0 ds : Vect n (Ty tv Val)} -> {0 motive : Ty tv u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
+Case e [] {ds} =
+  Absurd $ rewrite (sym $ invertVectZ ds) in e
 Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)
 
-record Gen (0 u : U) (0 var : VarTy) (a : Type) where
+record Gen (0 u : U) (0 var : VarTy tv) (a : Type) where
   constructor MkGen
   -- `r` is explicit because of https://github.com/idris-lang/Idris2/issues/3533.
-  unGen : (0 r : Ty' u) -> (a -> Expr var r) -> Expr var r
+  unGen : (0 r : Ty tv u) -> (a -> Expr var r) -> Expr var r
 
-runGen : {0 a : Ty' u} -> Gen u var (Expr var a) -> Expr var a
+runGen : {0 a : Ty tv u} -> Gen u var (Expr var a) -> Expr var a
 runGen gen = unGen gen _ id
 
-gen : {v : U} -> {0 a : Ty' v} -> Expr var a -> Gen u var (Expr var a)
+gen : {v : U} -> {0 a : Ty tv v} -> Expr var a -> Gen u var (Expr var a)
 gen e = MkGen $ \_, k => Let _ e (\x => k (Var x))
 
-interface Monad m => MonadGen (0 u : U) (0 var : VarTy) m | m where
+interface Monad m => MonadGen (0 u : U) (0 var : VarTy tv) m | m where
   liftGen : Gen u var a -> m a
 
 Functor (Gen u var) where
@@ -61,13 +62,13 @@ MonadGen u var (Gen u var) where
   liftGen gen = gen
 
 -- https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/haskell-cftt/CFTT/Improve.hs#L17
-interface MonadGen Val var m => Improve (0 var : VarTy) (0 f : forall tyvar. Ty tyvar Val -> Ty tyvar u) (0 m : Type -> Type) | m where
-  up : {0 a : Ty' Val} -> Expr var (f a) -> m (Expr var a)
-  down : {0 a : Ty' Val} -> m (Expr var a) -> Expr var (f a)
+interface MonadGen Val var m => Improve (0 var : VarTy tyvar) (0 f : Ty tyvar Val -> Ty tyvar u) (0 m : Type -> Type) | m where
+  up : {0 a : Ty _ Val} -> Expr var (f a) -> m (Expr var a)
+  down : (0 a : Ty _ Val) -> m (Expr var a) -> Expr var (f a)
 
-interface Split (0 a : Ty' Val) where
-  0 SplitTo : VarTy -> Type
-  split : {0 var : VarTy} -> Expr var a -> Gen Val var (SplitTo var)
+interface Split (0 a : Ty tyvar Val) where
+  0 SplitTo : VarTy tyvar -> Type
+  split : (0 var : VarTy _) -> Expr var a -> Gen Val var (SplitTo var)
 
 data IdentityTag : Type where
 
@@ -76,14 +77,14 @@ Identity a = Newtype IdentityTag a
 
 Improve var Identity (Gen Val var) where
   up x = pure (Unwrap x)
-  down x = unGen x _ (Wrap _)
+  down _ x = unGen x _ (Wrap _)
 
 List : Ty tyvar Val -> Ty tyvar Val
 List a = Fix (\list => Sum [One, Product [a, TyVar list]])
 
-{0 a : Ty' Val} -> Split (List a) where
+{0 a : Ty tyvar Val} -> Split (List a) where
   SplitTo var = Maybe (Expr var a, Expr var (List a))
-  split as = MkGen $ \_, k =>
+  split _ as = MkGen $ \_, k =>
     Case (Unroll as %search) [
       \_ => k Nothing,
       \cons => k (Just (First (Var {ty = Product [a, List a]} cons), First (Rest (Var {ty = Product [a, List a]} cons))))
@@ -113,20 +114,20 @@ namespace TreeExample
   Tree : Ty tyvar Val -> Ty tyvar Val
   Tree a = Fix $ TreeF a
 
-  leaf : {0 a : Ty' Val} -> Expr var (Tree a)
+  leaf : {0 a : Ty tyvar Val} -> Expr var (Tree a)
   leaf = Roll (Left TT) %search
 
-  node : {0 a : Ty' Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> Expr var (Tree a)
+  node : {0 a : Ty tyvar Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> Expr var (Tree a)
   node n l r =
     Roll (Right $ Left $ Prod n (Prod l $ Prod r TT)) %search
 
-  data TreeSplit : (0 var : VarTy) -> Ty' Val -> Type where
-    Leaf : {0 a : Ty' Val} -> TreeSplit var a
-    Node : {0 a : Ty' Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> TreeSplit var a
+  data TreeSplit : (0 var : VarTy tyvar) -> Ty tyvar Val -> Type where
+    Leaf : {0 a : Ty tyvar Val} -> TreeSplit var a
+    Node : {0 a : Ty tyvar Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> TreeSplit var a
 
-  {0 a : Ty' Val} -> Split (Tree a) where
+  {0 a : Ty tyvar Val} -> Split (Tree a) where
     SplitTo var = TreeSplit var a
-    split as = MkGen $ \_, k =>
+    split _ as = MkGen $ \_, k =>
       Case (Unroll as %search) [\_ => k Leaf, \node => k (Node (First (Var node)) (First (Rest (Var node))) (First (Rest (Rest (Var node)))))]
 
   Nat : Ty tyVar Val
@@ -140,15 +141,15 @@ namespace TreeExample
   Maybe : Ty tyvar Val -> Ty tyvar Val
   Maybe a = Sum [One, a]
 
-  nothing : {0 a : Ty' Val} -> Expr var (Maybe a)
+  nothing : {0 a : Ty tyvar Val} -> Expr var (Maybe a)
   nothing = Left TT
 
-  just : {0 a : Ty' Val} -> Expr var a -> Expr var (Maybe a)
+  just : {0 a : Ty tyvar Val} -> Expr var a -> Expr var (Maybe a)
   just a = Right $ Left a
 
-  {0 a : Ty' Val} -> Split (Maybe a) where
+  {0 a : Ty tyvar Val} -> Split (Maybe a) where
     SplitTo var = Maybe (Expr var a)
-    split ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
+    split _ ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
 
   data MaybeTTag : Type where
 
@@ -156,10 +157,10 @@ namespace TreeExample
   MaybeT : (Ty var Val -> Ty var u) -> Ty var Val -> Ty var u
   MaybeT m a = Newtype MaybeTTag $ m (Maybe a)
 
-  runMaybeT : {0 m : forall var. Ty var Val -> Ty var u} -> {0 a : Ty' Val} -> Expr var (MaybeT m a) -> Expr var (m (Maybe a))
+  runMaybeT : {0 m : Ty tv Val -> Ty tv u} -> {0 a : Ty tv Val} -> Expr var (MaybeT m a) -> Expr var (m (Maybe a))
   runMaybeT = Unwrap
 
-  MkMaybeT : {0 m : forall var. Ty var Val -> Ty var u} -> {0 a : Ty' Val} -> Expr var (m (Maybe a)) -> Expr var (MaybeT m a)
+  MkMaybeT : {0 m : Ty tv Val -> Ty tv u} -> {0 a : Ty tv Val} -> Expr var (m (Maybe a)) -> Expr var (MaybeT m a)
   MkMaybeT = Wrap _
 
   MonadGen u var m => MonadGen u var (MaybeT m) where
@@ -168,26 +169,26 @@ namespace TreeExample
   -- NOTE: For some reason, auto search can't find this, and it's rather
   -- annoying.
   [improveMaybeInstance]
-  {0 f : forall var. Ty var Val -> Ty var u} -> Improve var f m => Improve var (MaybeT f) (MaybeT m) where
+  {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => Improve var (MaybeT f) (MaybeT m) where
     up x = MkMaybeT $ do
       ma <- up $ runMaybeT {m = f} x
-      liftGen $ split ma
-    down (MkMaybeT x) = MkMaybeT {m = f} $ down $ x >>= \case
+      liftGen $ split _ ma
+    down _ (MkMaybeT x) = MkMaybeT {m = f} $ down _ $ x >>= \case
       Nothing => pure nothing
       Just a => pure (just a)
 
-  fail : {0 f : forall var. Ty var Val -> Ty var u} -> Improve var f m => {0 a : Ty' Val} -> Expr var (MaybeT f a)
-  fail = down @{improveMaybeInstance} {m = MaybeT m} nothing
+  fail : {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => {0 a : Ty tv Val} -> Expr var (MaybeT f a)
+  fail = down _ @{improveMaybeInstance} {m = MaybeT m} nothing
 
   MonadGen u var m => MonadGen u var (StateT s m) where
     liftGen = lift . liftGen
 
   [improveStateInstance]
-  {0 f : forall var. Ty var Val -> Ty var Val} -> {0 s : Ty' Val} -> Improve var f m => Improve var (StateT s f) (StateT (Expr var s) m) where
+  {0 f : Ty tv Val -> Ty tv Val} -> {0 s : Ty tv Val} -> Improve var f m => Improve var (StateT s f) (StateT (Expr var s) m) where
     up x = ST $ \s => do
       h <- up {m = m} (App (Unwrap x) s)
       pure (First (Rest h), First h)
-    down x = Wrap _ $ Lam _ $ \s => down {m = m} $ do
+    down _ x = Wrap _ $ Lam _ $ \s => down _ {m = m} $ do
       (s, a) <- runStateT (Var s) x
       pure (Prod a (Prod s TT))
 
@@ -204,51 +205,51 @@ namespace TreeExample
 
   Split Bool where
     SplitTo var = Bool
-    split b = MkGen $ \_, k => Case (Unwrap b) [\_ => k True, \_ => k False]
+    split _ b = MkGen $ \_, k => Case (Unwrap b) [\_ => k True, \_ => k False]
 
   Split Nat where
     SplitTo var = Maybe (Expr var Nat)
-    split n = MkGen $ \_, k => Case (Unroll n %search) [\_ => k Nothing, \n' => k (Just (Var n'))]
+    split _ n = MkGen $ \_, k => Case (Unroll n %search) [\_ => k Nothing, \n' => k (Just (Var n'))]
 
   (==) : Expr var (Fun Nat (Fun Nat Bool))
   (==) = flip (LetRec _) Var $ \eq =>
     Lam _ $ \n => Lam _ $ \m =>
       unGen (do
-        case (!(split (Var n)), !(split (Var m))) of
+        case (!(split _ (Var n)), !(split _ (Var m))) of
           (Nothing, Nothing) => pure true
           (Just n', Just m') => pure $ App (App (Var eq) n') m'
           _ => pure false) _ id
 
-  0 U_SOP : Type
-  U_SOP = List (List (Ty' Val))
+  0 U_SOP : Type -> Type
+  U_SOP tv = List (List (Ty tv Val))
 
-  0 El_SOP : U_SOP -> VarTy -> Type
+  0 El_SOP : U_SOP tv -> VarTy tv -> Type
   El_SOP a var = SOP (Expr var) a
 
-  0 El_SOP' : U_SOP -> Type
+  0 El_SOP' : U_SOP tv -> Type
   El_SOP' a = forall var. El_SOP a var
 
-  interface IsSOP (0 var : VarTy) (0 a : Type) | a where
-    Rep : U_SOP
+  interface IsSOP (0 tv : Type) (0 var : VarTy tv) (0 a : Type) | a where
+    Rep : U_SOP tv
     rep : a <-> El_SOP Rep var
 
-  IsSOP var a => IsSOP var (Maybe a) where
-    Rep = [] :: Rep {a}
+  {0 var : VarTy tv} -> IsSOP tv var a => IsSOP tv var (Maybe a) where
+    Rep = [] :: Rep {var, a}
     rep = MkIso {
       forwards = \case
         Nothing => Z []
-        Just x => S (rep.forwards x),
+        Just x => S ((rep {var}).forwards x),
       backwards = \case
         Z [] => Nothing
-        S sop => Just (rep.backwards sop),
+        S sop => Just ((rep {var}).backwards sop),
       inverseL = \case
         Nothing => Refl
         Just x =>
-          cong Just (rep.inverseL x),
+          cong Just ((rep {var}).inverseL x),
       inverseR = \case
         Z [] => Refl
         S sop =>
-          cong S $ rep.inverseR sop
+          cong S $ (rep {var}).inverseR sop
     }
 
   distributeSop : List a -> List (List a) -> List (List a)
@@ -444,7 +445,7 @@ namespace TreeExample
       cong S $ splitRightInvert _ _ _ prf
 
   -- https://github.com/AndrasKovacs/staged/blob/fe63229afeaec8caad3f46e1a33337fdab712982/icfp24paper/supplement/agda-cftt/SOP.agda#L286
-  IsSOP var a => IsSOP var b => IsSOP var (a, b) where
+  IsSOP tv var a => IsSOP tv var b => IsSOP tv var (a, b) where
     Rep = cartesianSop (Rep {a}) (Rep {a = b})
     rep = MkIso {
       forwards = \x =>
@@ -468,15 +469,15 @@ namespace TreeExample
   MultiArgFunU [] = id
   MultiArgFunU _ = const Comp
 
-  MultiArgFun : (args : List (Ty' Val)) -> Ty' u -> Ty' (MultiArgFunU args u)
+  MultiArgFun : (args : List (Ty tv Val)) -> Ty tv u -> Ty tv (MultiArgFunU args u)
   MultiArgFun [] ret = ret
   MultiArgFun (arg :: args) ret = Fun arg (MultiArgFun args ret)
 
-  0 Fun_SOPLift : U_SOP -> Ty' u -> VarTy -> Type
+  0 Fun_SOPLift : U_SOP tv -> Ty tv u -> VarTy tv -> Type
   Fun_SOPLift [] r _ = ()
   Fun_SOPLift (a :: b) r var = (Expr var (MultiArgFun a r), Fun_SOPLift b r var)
 
-  tabulate : {a : _} -> {0 r : Ty' u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
+  tabulate : {a : _} -> {0 r : Ty tv u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
   tabulate {a = []} f = ()
   tabulate {a = ([] :: xs)} f = (f $ Z [], tabulate {a = xs} $ \sop => f (S sop))
   tabulate {a = ((x :: ys) :: xs)} f =
@@ -487,7 +488,7 @@ namespace TreeExample
             S p => S p in
     (Lam _ (fst . rec2 . Var), rec)
 
-  index : {a : _} -> {0 r : Ty' u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
+  index : {a : _} -> {0 r : Ty tv u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
   index {a = []} fs s = absurd s
   index {a = ([] :: xs)} (res, fs) (Z _) = res
   index {a = ([] :: xs)} (res, fs) (S p) = index fs p
@@ -499,20 +500,20 @@ namespace TreeExample
 
   %unbound_implicits off
   genFun_SOPLift :
-    {a : U_SOP} ->
+    {0 tv : Type} ->
+    {a : U_SOP tv} ->
     {v : U} ->
-    {0 r : Ty' v} -> -- why unerased?
+    {0 r : Ty tv v} ->
     {0 u : U} ->
-    {0 var : VarTy} ->
+    {0 var : VarTy tv} ->
     Fun_SOPLift a r var ->
     Gen u var (Fun_SOPLift a r var)
   genFun_SOPLift {a = []} () = pure ()
   genFun_SOPLift {a = (ps :: a)} (f, fs) = [| (,) (gen f) (genFun_SOPLift fs) |]
   %unbound_implicits on
 
-  interface Monad m => MonadJoin var m | m where
-    join : IsSOP var a => m a -> m a
-
+  interface Monad m => MonadJoin (0 var : VarTy tv) m | m where
+    join : IsSOP _ var a => m a -> m a
 
   {u : U} -> MonadJoin var (Gen u var) where
     join ma = MkGen $ \_, k => runGen $ do
@@ -526,14 +527,14 @@ namespace TreeExample
   MonadJoin var m => MonadJoin var (ReaderT r m) where
     join (MkReaderT ma) = MkReaderT (join . ma)
 
-  MonadJoin var m => IsSOP var s => MonadJoin var (StateT s m) where
+  MonadJoin var m => IsSOP tv var s => MonadJoin var (StateT s m) where
     join (ST ma) = ST (join . ma)
 
   fromInteger : (n : Integer) -> Expr v Nat
-  fromInteger n = if n <= 0 then Roll (Left TT) %search else Roll (Right $ Left $ assert_total $  TreeExample.fromInteger (n - 1)) %search
+  fromInteger n = if n <= 0 then Roll (Left TT) %search else Roll (Right $ Left $ assert_total $ TreeExample.fromInteger (n - 1)) %search
 
   -- TODO: Erase a
-  {a : Ty' Val} -> IsSOP v (Expr v a) where
+  {a : Ty tv Val} -> IsSOP tv v (Expr v a) where
     Rep = [[a]]
     rep = MkIso {
       forwards = \e => Z [e],
@@ -545,17 +546,17 @@ namespace TreeExample
   f : Expr var (Fun (Tree Nat) (StateT (List Nat) (MaybeT Identity) (Tree Nat)))
   f =
     LetRec _ (\f =>
-      Lam (Tree Nat) $ \t => down @{improveStateInstance @{improveMaybeInstance}} $ do
-        treeSplit <- liftGen {m = StateT (Expr var (List Nat)) (MaybeT (Gen Val var)), var} $ split {var} (the (Expr var (Tree Nat)) $ Var t)
+      Lam (Tree Nat) $ \t => down @{improveStateInstance @{improveMaybeInstance}} _ $ do
+        treeSplit <- liftGen {m = StateT (Expr var (List Nat)) (MaybeT (Gen Val var)), var} $ split var (the (Expr var (Tree Nat)) $ Var t)
         case treeSplit of
           Leaf => pure leaf
           Node n l r => do
-            b <- liftGen $ split (App (App (==) n) 0)
+            b <- liftGen $ split _ (App (App (==) n) 0)
             case b of
               True => lift nothing
               False => pure ()
             ns <- State.get
-            n <- TreeExample.join {var} $ case !(liftGen {var} $ split {var} $ the (Expr var (List Nat)) ns) of
+            n <- TreeExample.join {var} $ case !(liftGen {var} $ split var $ the (Expr var (List Nat)) ns) of
               Nothing => pure n
               Just (n, ns) => do
                 put ns

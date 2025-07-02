@@ -15,10 +15,6 @@ data Ty : Type -> U -> Type where
   Newtype : (0 tag : Type) -> Ty var u -> Ty var u
 
 public export
-0 Ty' : U -> Type
-Ty' u = forall tv. Ty tv u
-
-public export
-One, Zero : Ty' Val
+One, Zero : Ty tv Val
 One = Product []
 Zero = Sum []
