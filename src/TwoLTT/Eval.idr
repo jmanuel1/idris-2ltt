@@ -21,8 +21,8 @@ covering
 covering
 0 interpValTy : Ty Type Val -> Type
 interpValTy (Fix f) = Fix (\t => (interpValTy (f t)))
-interpValTy (Product ds) = HVect $ map interpValTy ds
-interpValTy (Sum ds) = Any id $ map interpValTy ds
+interpValTy (Product ds) = All interpValTy ds
+interpValTy (Sum ds) = Any interpValTy ds
 interpValTy (TyVar x) = x
 interpValTy (Newtype tag x) = (interpValTy x)
 
@@ -64,22 +64,6 @@ biinjAny Refl = (Refl, Refl)
 Injective HVect where
   injective Refl = Refl
 
-covering
-0 subFixInterp : {unroll : Ty Type Val} -> Sub f (Fix g) unroll -> interpValTy unroll === interpValTy (f (Fix (\t => (interpValTy (g t)))))
-subFixInterp (SubFix t1 sub) =
-  cong Fix $ funExt $ \t => subFixInterp sub
-subFixInterp (SubSum x {n} t2s y) =
-  let t1Prf = (subFixInterp x)
-      t2Prf : Any id ? === Any id ? := (subFixInterp y)
-  in cong (Any id) $ cong2 (::) t1Prf $ snd $ biinjAny t2Prf
-subFixInterp (SubProd x t2s y) =
-  let t1Prf = (subFixInterp x)
-      t2Prf = (subFixInterp y)
-  in cong HVect $ cong2 (::) t1Prf $ inj _ t2Prf
-subFixInterp SubReplace = Refl
-subFixInterp SubConst = Refl
-subFixInterp (SubNewtype x) = (subFixInterp x)
-
 0 headMap : (xs : Vect (S n) a) -> head (map f xs) === f (head xs)
 headMap (x :: xs) = Refl
 
@@ -106,7 +90,7 @@ Uninhabited (Expr (\u, ty => interpTy ty) (Sum [])) where
   uninhabited (Absurd x) = absurd x
   uninhabited (Match {ds} x f g) =
     let x' = evalVal x
-    in elimAny (\l => absurd $ f $ replace {p = id} (headMap {f = interpValTy} ds) l) (\r => absurd $ g $ replace {p = Any id} (tailMap {f = interpValTy} ds) r) x'
+    in elimAny (\l => absurd $ f l) (\r => absurd $ g r) x'
   uninhabited (Var x) =
     absurd x
   uninhabited (App f arg) = absurd (evalComp f [eval arg])
@@ -125,9 +109,12 @@ evalVal (Let a t u) =
   let t' = eval t
   in evalVal (u t')
 evalVal (Absurd x) = absurd x
-evalVal (Match x f g) = ?evalVal_rhs_3
-evalVal (Var x) = ?evalVal_rhs_4
-evalVal (App f arg) = ?evalVal_rhs_5
+evalVal (Match x f g) =
+  elimAny (evalVal . f) (evalVal . g) $ evalVal x
+evalVal (Var x) = x
+evalVal (App f arg) =
+  let f' = evalComp f
+  in f' [evalVal arg]
 evalVal (Left x) = ?evalVal_rhs_6
 evalVal (Right x) = ?evalVal_rhs_7
 evalVal TT = ?evalVal_rhs_8
