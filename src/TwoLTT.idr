@@ -12,6 +12,7 @@ import Data.List
 import Data.List.Elem
 import Data.List.Quantifiers
 import Data.Nat
+import Data.Morphisms.Iso
 import Data.SOP
 import Data.Vect
 import Data.Vect.Quantifiers
@@ -89,15 +90,6 @@ List a = Fix (\list => Sum [One, Product [a, TyVar list]])
       \_ => k Nothing,
       \cons => k (Just (First (Var {ty = Product [a, List a]} cons), First (Rest (Var {ty = Product [a, List a]} cons))))
     ]
-
--- Copied from https://github.com/idris-lang/Idris2/blob/ec74792a49bf4d22509172d1f03d153ffca1b95c/libs/papers/Search/Tychonoff/PartI.idr#L48
-export infix 0 <->
-record (<->) (a, b : Type) where
-  constructor MkIso
-  forwards  : a -> b
-  backwards : b -> a
-  inverseL  : (x : a) -> backwards (forwards x) === x
-  inverseR  : (y : b) -> forwards (backwards y) === y
 
 -- Not having eta for records is getting in the way of me proving things about
 -- SOP from the sop package. So here's my own version...ish
