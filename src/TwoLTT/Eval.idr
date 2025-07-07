@@ -19,17 +19,26 @@ covering
 0 interpCompTy : Ty Type Comp -> ((n : Nat ** Vect n Type), Type)
 
 covering
-0 interpValTy : Ty Type Val -> Type
-interpValTy (Fix f) = Fix (\t => (interpValTy (f t)))
-interpValTy (Product ds) = All interpValTy ds
-interpValTy (Sum ds) = Any interpValTy ds
-interpValTy (TyVar x) = x
-interpValTy (Newtype tag x) = (interpValTy x)
+0 interpProductTy, interpSumTy : Vect n (Ty Type Val) -> Type
+
+covering
+0 InterpValTy : Ty Type Val -> Type
+InterpValTy (Fix f) = Fix (\t => (InterpValTy (f t)))
+InterpValTy (Product ds) = interpProductTy ds
+InterpValTy (Sum ds) = interpSumTy ds
+InterpValTy (TyVar x) = x
+InterpValTy (Newtype tag x) = (InterpValTy x)
+
+interpProductTy [] = ()
+interpProductTy (t :: ts) = ((InterpValTy t), interpProductTy ts)
+
+interpSumTy [] = Void
+interpSumTy (t :: ts) = Either (InterpValTy t) (interpSumTy ts)
 
 covering
 0 interpTy : {u : U} -> Ty Type u -> Type
 interpTy {u = Comp} = (\p => HVect (snd $ fst p) -> snd p) . interpCompTy
-interpTy {u = Val} = interpValTy
+interpTy {u = Val} = InterpValTy
 
 
 {-
@@ -41,34 +50,26 @@ fix f = f (fix f)
 
 interpCompTy (Fun arg {u = Comp} ret) =
   ((_ ** interpTy arg :: snd (fst $ interpCompTy ret)), snd $ interpCompTy ret)
-interpCompTy (Fun arg {u = Val} ret) = ((_ ** [interpTy arg]), interpValTy ret)
+interpCompTy (Fun arg {u = Val} ret) = ((_ ** [interpTy arg]), InterpValTy ret)
 interpCompTy (Newtype _ ty) = interpCompTy ty
-
-elimAny : (f (head xs) -> a) -> (Any f (tail xs) -> a) -> Any f xs -> a
-elimAny elimHead _ (Here x) = elimHead x
-elimAny _ elimTail (There x) = elimTail x
 
 0 funExt : ((x : a) -> f x = g x) -> f = g
 funExt _ = believe_me (Refl {x = f})
 
-{-data Zonk : Rel (Ty Type Val) where
-  Same : Zonk t t
-  Left : Zonk (TyVar t) t
-  Right : Zonk t (TyVar t)
--}
-
--- I don't use Biinjective interface because Any has an erased argument
-biinjAny : Any f xs = Any g ys -> (f = g, xs = ys)
-biinjAny Refl = (Refl, Refl)
-
-Injective HVect where
-  injective Refl = Refl
-
-0 headMap : (xs : Vect (S n) a) -> head (map f xs) === f (head xs)
-headMap (x :: xs) = Refl
-
-0 tailMap : (xs : Vect (S n) a) -> tail (map f xs) === map f (tail xs)
-tailMap (x :: xs) = Refl
+covering
+0 subInterpTy : Sub f s ty -> (InterpValTy (f (InterpValTy s))) === (InterpValTy ty)
+subInterpTy (SubFix t1 g) =
+  cong Fix $
+  funExt $ \t =>
+  subInterpTy g
+subInterpTy (SubSum sub t2s sub1) =
+  let prf = (subInterpTy sub)
+      prf1 = (subInterpTy sub1)
+  in cong2 Either prf prf1
+subInterpTy (SubProd sub t2s sub1) = cong2 (,) (subInterpTy sub) (subInterpTy sub1)
+subInterpTy SubReplace = Refl
+subInterpTy SubConst = Refl
+subInterpTy (SubNewtype sub) = (subInterpTy sub)
 
 covering
 eval : {u : U} -> {0 ty : Ty Type u} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
@@ -88,13 +89,13 @@ Uninhabited (Expr (\u, ty => interpTy ty) (Sum [])) where
     let t' = eval t
     in absurd (u t')
   uninhabited (Absurd x) = absurd x
-  uninhabited (Match {ds} x f g) =
+  uninhabited (Match {ds = d :: ds} x f g) =
     let x' = evalVal x
-    in elimAny (\l => absurd $ f l) (\r => absurd $ g r) x'
+    in (either (absurd . f) (absurd . g) x')
   uninhabited (Var x) =
     absurd x
   uninhabited (App f arg) = absurd (evalComp f [eval arg])
-  uninhabited (First x) = absurd (head $ evalVal x)
+  uninhabited (First x) = absurd (fst $ evalVal x)
   uninhabited (Unwrap x) = absurd (evalVal x)
   uninhabited (Unroll {f} x sub) =
     let x' = unroll $ evalVal x
@@ -109,22 +110,24 @@ evalVal (Let a t u) =
   let t' = eval t
   in evalVal (u t')
 evalVal (Absurd x) = absurd x
-evalVal (Match x f g) =
-  elimAny (evalVal . f) (evalVal . g) $ evalVal x
+evalVal (Match {ds = d :: ds} x f g) =
+  either (evalVal . f) (evalVal . g) $ evalVal x
 evalVal (Var x) = x
 evalVal (App f arg) =
   let f' = evalComp f
   in f' [evalVal arg]
-evalVal (Left x) = ?evalVal_rhs_6
-evalVal (Right x) = ?evalVal_rhs_7
+evalVal (Left x) = Left $ evalVal x
+evalVal (Right x) = Right $ evalVal x
 evalVal TT = ?evalVal_rhs_8
 evalVal (Prod x y) = ?evalVal_rhs_9
-evalVal (First x) = head (evalVal x)
-evalVal (Rest x) = tail (evalVal x)
+evalVal (First x) = fst (evalVal x)
+evalVal (Rest x) = snd (evalVal x)
 evalVal (Wrap tag x) = evalVal x
 evalVal (Unwrap x) = evalVal x
-evalVal (Roll x sub) = Roll ?evalVal_rhs_16
-evalVal (Unroll x sub) = ?evalVal_rhs_15
+evalVal (Roll x sub) = Roll $ rewrite subInterpTy sub in evalVal x
+evalVal (Unroll x sub) =
+  let x' = unroll $ evalVal x
+  in rewrite sym (subInterpTy sub) in x'
 
 eval {u = Val} = evalVal
 eval {u = Comp} = evalComp
