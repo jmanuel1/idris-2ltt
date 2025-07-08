@@ -469,7 +469,7 @@ namespace TreeExample
   Fun_SOPLift [] r _ = ()
   Fun_SOPLift (a :: b) r var = (Expr var (MultiArgFun a r), Fun_SOPLift b r var)
 
-  tabulate : {a : _} -> {0 r : Ty tv u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
+  tabulate : {a : _} -> {u : U} -> {0 r : Ty tv u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
   tabulate {a = []} f = ()
   tabulate {a = ([] :: xs)} f = (f $ Z [], tabulate {a = xs} $ \sop => f (S sop))
   tabulate {a = ((x :: ys) :: xs)} f =

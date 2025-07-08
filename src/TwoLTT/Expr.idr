@@ -33,7 +33,13 @@ data Expr : VarTy tv -> Ty tv u -> Type where
     (var _ (head ds) -> Expr var a) ->
     (var _ (Sum $ tail ds) -> Expr var a) ->
     Expr var a
-  Lam : {0 var : VarTy tv} -> (0 a : Ty tv Val) -> {0 b : Ty tv u} -> (t : var _ a -> Expr var b) -> Expr var (Fun a b)
+  Lam :
+    {0 var : VarTy tv} ->
+    (0 a : Ty tv Val) ->
+    {u : U} -> -- unerased for eval
+    {0 b : Ty tv u} ->
+    (t : var _ a -> Expr var b) ->
+    Expr var (Fun a b)
   Var : {0 var : VarTy tv} -> {0 ty : Ty tv u} -> var _ ty -> Expr var ty
   App : {0 a : Ty tv Val} -> {0 b : Ty tv u} -> (f : Expr var (Fun a b)) -> (arg : Expr var a) -> Expr var b
   Left :

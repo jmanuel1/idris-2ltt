@@ -16,7 +16,7 @@ record Fix (f : Type -> Type) where
   unroll : f (Fix f)
 
 covering
-0 interpCompTy : Ty Type Comp -> ((n : Nat ** Vect n Type), Type)
+0 interpCompTy : Ty Type Comp -> ((n : Nat ** Vect (S n) Type), Type)
 
 covering
 0 interpProductTy, interpSumTy : Vect n (Ty Type Val) -> Type
@@ -115,8 +115,8 @@ evalVal (App f arg) =
   in f' [evalVal arg]
 evalVal (Left x) = Left $ evalVal x
 evalVal (Right x) = Right $ evalVal x
-evalVal TT = ?evalVal_rhs_8
-evalVal (Prod x y) = ?evalVal_rhs_9
+evalVal TT = ()
+evalVal (Prod x y) = (evalVal x, evalVal y)
 evalVal (First x) = fst (evalVal x)
 evalVal (Rest x) = snd (evalVal x)
 evalVal (Wrap tag x) = evalVal x
@@ -137,9 +137,10 @@ evalComp (Let a t u) arg =
   let t' = eval t
   in evalComp (u t') arg
 evalComp (Absurd x) arg = absurd x
-evalComp (Match x f g) arg = ?ghjg_3
-evalComp (Lam a t) arg = ?ghjg_4
-evalComp (Var x) arg = ?ghjg_5
-evalComp (App f x) arg = ?ghjg_6
-evalComp (Wrap tag x) arg = ?ghjg_7
-evalComp (Unwrap x) arg = ?ghjg_8
+evalComp (Match {ds = d :: ds} x f g) arg = (either (evalComp . f) (evalComp . g) $ evalVal x) arg
+evalComp (Lam a {u = Val} t) (arg :: []) = evalVal (t arg)
+evalComp (Lam a {u = Comp} t) (arg :: args) = evalComp (t arg) args
+evalComp (Var x) arg = x arg
+evalComp (App f x) arg = evalComp f (evalVal x :: arg)
+evalComp (Wrap tag x) arg = evalComp x arg
+evalComp (Unwrap x) arg = evalComp x arg
