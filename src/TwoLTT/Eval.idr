@@ -40,13 +40,10 @@ covering
 interpTy {u = Comp} = (\p => HVect (snd $ fst p) -> snd p) . interpCompTy
 interpTy {u = Val} = InterpValTy
 
-
-{-
---apply : {0 a : Ty' Val} -> {0 b : Ty' u} -> Expr (\u, ty => interpTy ty) (Fun a b) -> (interpTy a) -> (interpTy b)
--}
+-- make sure to eta-expand fix so it can actually terminate
 covering
-fix : (a -> a) -> a
-fix f = f (fix f)
+fix : ((a -> b) -> (a -> b)) -> (a -> b)
+fix f x = f (fix f) x
 
 interpCompTy (Fun arg {u = Comp} ret) =
   ((_ ** interpTy arg :: snd (fst $ interpCompTy ret)), snd $ interpCompTy ret)
