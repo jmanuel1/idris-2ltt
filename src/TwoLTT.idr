@@ -11,6 +11,7 @@ import Data.DPair
 import Data.Either
 import Data.List
 import Data.List.Elem
+import Data.List.Erased
 import Data.List.Quantifiers
 import Data.Nat
 import Data.Morphisms.Iso
@@ -94,30 +95,21 @@ List a = Fix (\list => Sum [One, Product [a, TyVar list]])
 
 -- I use this so that I can pattern match on the spine without needing the
 -- elements at runtime.
-data NP_ : (0 a : Type) -> (a -> Type) -> Vect n a -> Type where
+data NP_ : (0 a : Type) -> (a -> Type) -> ErasedList a -> Type where
   Nil : NP_ a f []
   (::) : f x -> NP_ a f xs -> NP_ a f (x :: xs)
 
+0 NP : (a -> Type) -> ErasedList a -> Type
+NP f xs = NP_ a f xs
 
-private typebind infixr 0 `Subset`
-
-0 RuntimeLenErasedVect : Type -> Type
-RuntimeLenErasedVect a = (n : Nat) `Subset` Vect n a
-
-0 NP : (a -> Type) -> RuntimeLenErasedVect a -> Type
-NP f xs = NP_ a f $ snd xs
-
-(++) : RuntimeLenErasedVect a -> RuntimeLenErasedVect a -> RuntimeLenErasedVect a
-xs ++ ys = Element _ (snd xs ++ snd ys)
-
-append : NP f ks -> NP f ls -> TwoLTT.NP f (ks ++ ls)
-append {ks = Element _ _} [] ys = ys
-append {ks = Element _ _} (x :: xs) ys = x :: append xs ys
+append : NP f ks -> NP f ks' -> TwoLTT.NP f (ks ++ ks')
+append [] ys = ys
+append (x :: xs) ys = x :: append xs ys
 
 -- Not having eta for records is getting in the way of me proving things about
--- SOP from the sop package. So here's my own version...ish
-0 SOP : (a -> Type) -> List (RuntimeLenErasedVect a) -> Type
-SOP f xs = NS_ (RuntimeLenErasedVect a) (\xs => TwoLTT.NP_ a f (snd xs)) xs
+-- SOP from the sop package. So here's my own version
+0 SOP : (a -> Type) -> List (ErasedList a) -> Type
+SOP f xs = NS_ (ErasedList a) (\xs => TwoLTT.NP_ a f xs) xs
 
 Uninhabited (SOP f []) where
   uninhabited sum impossible
@@ -236,7 +228,7 @@ namespace TreeExample
           _ => pure false) _ id
 
   0 U_SOP : Type -> Type
-  U_SOP tv = List (Subset Nat $ \n => Vect n (Ty tv Val))
+  U_SOP tv = List (ErasedList (Ty tv Val))
 
   0 El_SOP : U_SOP tv -> VarTy tv -> Type
   El_SOP a var = SOP (Expr var) a
@@ -249,7 +241,7 @@ namespace TreeExample
     rep : a <-> El_SOP Rep var
 
   {0 var : VarTy tv} -> IsSOP tv var a => IsSOP tv var (Maybe a) where
-    Rep = Element 0 [] :: Rep {var, a}
+    Rep = [] :: Rep {var, a}
     rep = MkIso {
       forwards = \case
         Nothing => Z []
@@ -267,11 +259,11 @@ namespace TreeExample
           cong S $ (rep {var}).inverseR sop
     }
 
-  distributeSop : (Subset Nat $ \n => Vect n a) -> List (Subset Nat $ \n => Vect n a) -> List (Subset Nat $ \n => Vect n a)
+  distributeSop : ErasedList a -> List (ErasedList a) -> List (ErasedList a)
   distributeSop pa [] = []
-  distributeSop pa (pb :: pbs) = (Element _ $ snd pa ++ snd pb) :: distributeSop pa pbs
+  distributeSop pa (pb :: pbs) = (pa ++ pb) :: distributeSop pa pbs
 
-  cartesianSop : (sopa, sopb : List (RuntimeLenErasedVect a)) -> List (RuntimeLenErasedVect a)
+  cartesianSop : (sopa, sopb : List (ErasedList a)) -> List (ErasedList a)
   cartesianSop [] _ = []
   cartesianSop (pa :: pas) sopb = distributeSop pa sopb ++ cartesianSop pas sopb
 
@@ -279,7 +271,7 @@ namespace TreeExample
   leftSop (Z a) = Z a
   leftSop (S a) = S (leftSop a)
 
-  rightSop : {lss : List (RuntimeLenErasedVect a)} -> SOP f kss -> SOP f (lss ++ kss)
+  rightSop : {lss : List (ErasedList a)} -> SOP f kss -> SOP f (lss ++ kss)
   rightSop {lss = []} x = x
   rightSop {lss = ls :: lss} x = S (rightSop x)
 
@@ -291,7 +283,7 @@ namespace TreeExample
   pairPSop x (Z y) = Z (append x y)
   pairPSop x (S y) = S (pairPSop x y)
 
-  sopProduct : {kss, lss : List (RuntimeLenErasedVect k)} -> SOP f kss -> SOP f lss -> SOP f (cartesianSop kss lss)
+  sopProduct : {kss, lss : List (ErasedList k)} -> SOP f kss -> SOP f lss -> SOP f (cartesianSop kss lss)
   sopProduct {kss = .(ks :: kss)} (Z v) y = leftSop (pairPSop v y)
   sopProduct (S x) y = rightSop (sopProduct x y)
 
@@ -301,17 +293,17 @@ namespace TreeExample
   splitNs (x :: xs) (S y) = mapFst S (splitNs xs y)
 
   -- Using this instead of `Data.SOP.NP.narrow` to make proofs easier.
-  unpairP : {a : RuntimeLenErasedVect k} -> NP f (a ++ b) -> (NP f a, NP f b)
-  unpairP {a = (0 ** [])} x = ([], x)
-  unpairP {a = (S _ ** a :: as)} (x :: y) =
-    mapFst (x ::) $ unpairP {a = (_ ** as)} y
+  unpairP : {a : ErasedList k} -> NP f (a ++ b) -> (NP f a, NP f b)
+  unpairP {a = []} x = ([], x)
+  unpairP {a = a :: as} (x :: y) =
+    mapFst (x ::) $ unpairP {a = as} y
 
-  unpairPNs : (ks : RuntimeLenErasedVect k) -> (lss : List (RuntimeLenErasedVect k)) -> NS (NP f) (distributeSop ks lss) -> (NP f ks, NS (NP f) lss)
+  unpairPNs : (ks : ErasedList k) -> (lss : List (ErasedList k)) -> NS (NP f) (distributeSop ks lss) -> (NP f ks, NS (NP f) lss)
   unpairPNs _ [] s impossible
   unpairPNs ks (x :: xs) (Z p) = mapSnd Z (unpairP p)
   unpairPNs ks (x :: xs) (S s) = mapSnd S (unpairPNs _ _ s)
 
-  unpairSop : (kss, lss : List (RuntimeLenErasedVect k)) -> SOP f (cartesianSop kss lss) -> (SOP f kss, SOP f lss)
+  unpairSop : (kss, lss : List (ErasedList k)) -> SOP f (cartesianSop kss lss) -> (SOP f kss, SOP f lss)
   unpairSop (ks :: kss) (ls :: lss) (Z v) =
     bimap Z Z (unpairP v)
   unpairSop (ks :: kss) (ls :: lss) (S x) =
@@ -344,19 +336,23 @@ namespace TreeExample
   0 etaPair : (x : (a, b)) -> (fst x, snd x) = x
   etaPair (x1, x2) = Refl
 
-  0 pairPEta : (ks, ls : List k) -> (p : NP f (ks ++ ls)) -> append {ks, ks' = ls} (fst (unpairP {a = ks, b = ls} p)) (snd (unpairP {a = ks, b = ls} p)) = p
+  0 pairPEta : (ks, ls : ErasedList k) -> (p : NP f (ks ++ ls)) -> append {ks, ks' = ls} (fst (unpairP {a = ks, b = ls} p)) (snd (unpairP {a = ks, b = ls} p)) = p
   pairPEta [] ls p = Refl
   pairPEta (k :: ks) ls (v :: vs) =
     replace {p = \up => append (fst (bimap (\arg => v :: arg) id up)) (snd (bimap (\arg => v :: arg) id up)) = v :: vs} (etaPair (unpairP vs)) $
     cong (v ::) $ pairPEta ks ls vs
 
-  0 leftSopBeta : {0 lss : List (List k)} -> (s : NS (NP f) kss) -> splitNs kss {ls = lss} (leftSop {lss} s) = Left s
+  0 leftSopBeta :
+    {0 lss : List (ErasedList k)} ->
+    {0 f : k -> Type} ->
+    (s : NS (NP f) kss) ->
+    splitNs kss {ls = lss} (leftSop {lss} s) = Left s
   leftSopBeta (Z v) = Refl
   leftSopBeta {kss = .(_ :: kss)} (S x) =
     rewrite leftSopBeta {k, lss, f, kss} x in
     Refl
 
-  0 rightSopBeta : (kss : List (List k)) -> splitNs kss (rightSop {lss = kss} sop) = Right sop
+  0 rightSopBeta : (kss : List (ErasedList k)) -> splitNs kss (rightSop {lss = kss} sop) = Right sop
   rightSopBeta [] = Refl
   rightSopBeta (x :: xs) =
     rewrite rightSopBeta xs {sop} in
@@ -387,7 +383,7 @@ namespace TreeExample
   pairSopBeta {kss = []} x s impossible
   pairSopBeta {lss = []} x s impossible
 
-  0 pairPSopEta : (ys : List (RuntimeLenErasedVect k)) -> (distSop : SOP f (distributeSop y ys)) -> pairPSop (fst (unpairPNs y ys distSop)) (snd (unpairPNs y ys distSop)) = distSop
+  0 pairPSopEta : (ys : List (ErasedList k)) -> (distSop : SOP f (distributeSop y ys)) -> pairPSop (fst (unpairPNs y ys distSop)) (snd (unpairPNs y ys distSop)) = distSop
   pairPSopEta [] distSop impossible
   pairPSopEta (x :: xs) (Z p) =
     rewrite sym $ etaPair {a = NP f y, b = NP f x} (unpairP p) in
@@ -409,9 +405,9 @@ namespace TreeExample
     injective Refl = Refl
 
   splitLeftInvert :
-    (xs : List (List k)) ->
-    (ys : List (List k)) ->
-    (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
+    (xs : List (ErasedList k)) ->
+    (ys : List (ErasedList k)) ->
+    (s : NS_ (ErasedList k) (NP_ k f) (ys ++ xs)) ->
     {distSop : SOP f ys} ->
     splitNs ys {ls = xs} s = Left distSop ->
     leftSop {lss = xs, kss = ys} distSop = s
@@ -430,9 +426,9 @@ namespace TreeExample
     cong Left (sym helperPrf)
 
   splitRightInvert :
-    (xs : List (List k)) ->
-    (ys : List (List k)) ->
-    (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
+    (xs : List (ErasedList k)) ->
+    (ys : List (ErasedList k)) ->
+    (s : NS_ (ErasedList k) (NP_ k f) (ys ++ xs)) ->
     {sop : SOP f xs} ->
     splitNs ys {ls = xs} s = Right sop ->
     rightSop {lss = ys, kss = xs} sop = s
@@ -447,7 +443,7 @@ namespace TreeExample
     trans invertPrf $
     sym $ cong Right helperPrf
 
-  0 pairSopEta : (kss, lss : List ((n : Nat) `Subset` Vect n k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
+  0 pairSopEta : (kss, lss : List (ErasedList k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
   pairSopEta [] _ x impossible
   pairSopEta (y :: xs) [] x = absurd (snd (unpairSop xs [] x))
   pairSopEta (y :: xs) (z :: ys) (Z p) =
@@ -488,34 +484,33 @@ namespace TreeExample
   MultiArgFunU 0 = id
   MultiArgFunU _ = const Comp
 
-  0 MultiArgFun : {n : Nat} -> (args : Vect n (Ty tv Val)) -> Ty tv u -> Ty tv (MultiArgFunU n u)
-  MultiArgFun {n = 0} _ ret = ret
-  MultiArgFun {n = S _} args ret = Fun (head args) (MultiArgFun (tail args) ret)
+  0 MultiArgFun : (args : ErasedList (Ty tv Val)) -> Ty tv u -> Ty tv (MultiArgFunU (length args) u)
+  MultiArgFun [] ret = ret
+  MultiArgFun (arg :: args) ret = Fun arg (MultiArgFun args ret)
 
   0 Fun_SOPLift : U_SOP tv -> Ty tv u -> VarTy tv -> Type
   Fun_SOPLift [] r _ = ()
-  Fun_SOPLift (a :: b) r var = (Expr var (MultiArgFun (snd a) r), Fun_SOPLift b r var)
+  Fun_SOPLift (a :: b) r var = (Expr var (MultiArgFun a r), Fun_SOPLift b r var)
 
   tabulate : {a : _} -> {u : U} -> {0 r : Ty tv u} -> (El_SOP a var -> Expr var r) -> Fun_SOPLift a r var
   tabulate {a = []} f = ()
-  tabulate {a = ((Element 0 ys) :: xs)} f = (f $ Z (rewrite invertVectZ ys in []), tabulate {a = xs} $ \sop => f (S sop))
-  tabulate {a = ((Element (S _) zs) :: xs)} f =
+  tabulate {a = [] :: xs} f = (f $ Z [], tabulate {a = xs} $ \sop => f (S sop))
+  tabulate {a = (z :: zs) :: xs} f =
     let rec = TreeExample.tabulate $ \sop => f (S sop)
-        rec2 : Expr var (head zs) -> Fun_SOPLift ((Element _ $ tail zs) :: xs) r var = \x =>
-          tabulate {a = ((Element _ $ tail zs) :: xs)} $ \sop => f $ case sop of
+        rec2 : Expr var z -> Fun_SOPLift (zs :: xs) r var = \x =>
+          tabulate {a = zs :: xs} $ \sop => f $ case sop of
             Z p => Z (x :: p)
             S p => S p in
     (Lam _ (fst . rec2 . Var), rec)
 
   index : {a : _} -> {0 r : Ty tv u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
-  index {a = []} fs s = absurd s
-  index {a = ((Element 0 _) :: xs)} (res, fs) (Z _) = res
-  index {a = ((Element 0 _) :: xs)} (res, fs) (S p) = index fs p
-  index {a = ((Element (S _) .(_ :: ys)) :: xs)} (f, fs) (Z (first :: rest)) =
+  index {a = .([] :: xs)} (res, fs) (Z []) = res
+  index {a = _ :: xs} (res, fs) (S p) = index fs p
+  index {a = (_ :: ys) :: xs} (f, fs) (Z (first :: rest)) =
     let app = App f first
-        rec = index {a = (Element _ ys :: xs)} (app, fs) in
+        rec = index {a = ys :: xs} (app, fs) in
     rec (Z rest)
-  index {a = ((Element (S _) _) :: xs)} (f, fs) (S p) = index fs p
+  index {a = _ :: xs} (f, fs) (S p) = index fs p
 
   %unbound_implicits off
   genFun_SOPLift :
@@ -552,9 +547,8 @@ namespace TreeExample
   fromInteger : (n : Integer) -> Expr v Nat
   fromInteger n = if n <= 0 then Roll (Left TT) %search else Roll (Right $ Left $ assert_total $ TreeExample.fromInteger (n - 1)) %search
 
-  -- TODO: Erase a
   {0 a : Ty tv Val} -> IsSOP tv v (Expr v a) where
-    Rep = [Element _ [a]]
+    Rep = [[a]]
     rep = MkIso {
       forwards = \e => Z [e],
       backwards = \(Z [e]) => e,
