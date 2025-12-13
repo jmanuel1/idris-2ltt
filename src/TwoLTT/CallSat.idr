@@ -6,7 +6,10 @@ import TwoLTT.Types
 
 %default total
 
-etaExpand : {0 ty : Ty tv Comp} -> Expr var ty -> Expr var ty
+etaExpand : {ty : Ty tv Comp} -> Expr var ty -> Expr var ty
+etaExpand {ty = (Fun x {u = Val} y)} e = Lam x (\x => App e (Var x))
+etaExpand {ty = (Fun x {u = Comp} y)} e = Lam x (\x => etaExpand (App e (Var x)))
+etaExpand {ty = (Newtype tag x)} e = Wrap tag (etaExpand (Unwrap e))
 
 etaExpandCompLets : Expr var ty -> Expr var ty
 etaExpandCompLets (LetRec a t u) = LetRec a (\x => etaExpand $ etaExpandCompLets (t x)) (\x => etaExpandCompLets (u x))

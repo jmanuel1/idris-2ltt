@@ -15,11 +15,17 @@ VarTy tv = (0 u : U) -> Ty tv u -> Type
 -- http://adam.chlipala.net/papers/PhoasICFP08/PhoasICFP08.pdf
 public export
 data Expr : VarTy tv -> Ty tv u -> Type where
-  LetRec : {0 var : VarTy tv} -> {0 ty : Ty tv u} -> (0 a : Ty tv Comp) -> (t : var _ a -> Expr var a) -> (u : var _ a -> Expr var ty) -> Expr var ty
+  LetRec :
+    {0 var : VarTy tv} ->
+    {0 ty : Ty tv u} ->
+    (a : Ty tv Comp) -> -- unerased for call saturation
+    (t : var _ a -> Expr var a) ->
+    (u : var _ a -> Expr var ty) ->
+    Expr var ty
   Let :
     {0 var : VarTy tv} ->
     {u : U} -> -- unerased for eval
-    (0 a : Ty tv u) ->
+    (a : Ty tv u) -> -- unerased for call saturation
     {0 ty : Ty tv v} ->
     (t : Expr var a) ->
     (u : var _ a -> Expr var ty) ->
