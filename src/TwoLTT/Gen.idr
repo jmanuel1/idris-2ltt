@@ -9,14 +9,14 @@ public export
 record Gen (0 u : U) (0 var : VarTy tv) (a : Type) where
   constructor MkGen
   -- `r` is explicit because of https://github.com/idris-lang/Idris2/issues/3533.
-  unGen : (0 r : Ty tv u) -> (a -> Expr var r) -> Expr var r
+  unGen : (r : Ty tv u) -> (a -> Expr var r) -> Expr var r
 
 export
-runGen : {0 a : Ty tv u} -> Gen u var (Expr var a) -> Expr var a
+runGen : {a : Ty tv u} -> Gen u var (Expr var a) -> Expr var a
 runGen gen = unGen gen _ id
 
 export
-gen : {v : U} -> {0 a : Ty tv v} -> Expr var a -> Gen u var (Expr var a)
+gen : {v : U} -> {a : Ty tv v} -> Expr var a -> Gen u var (Expr var a)
 gen e = MkGen $ \_, k => Let _ e (\x => k (Var x))
 
 public export

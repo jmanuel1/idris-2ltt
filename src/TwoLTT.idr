@@ -5,7 +5,6 @@ module TwoLTT
 
 import Control.Monad.Maybe
 import Control.Monad.State
-import Data.List.Erased
 import Data.Morphisms.Iso
 import Data.Vect
 import Data.Vect.Quantifiers
@@ -28,8 +27,8 @@ Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)
 
 -- https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/haskell-cftt/CFTT/Improve.hs#L17
 interface MonadGen Val var m => Improve (0 var : VarTy tyvar) (0 f : Ty tyvar Val -> Ty tyvar u) (0 m : Type -> Type) | m where
-  up : {0 a : Ty _ Val} -> Expr var (f a) -> m (Expr var a)
-  down : (0 a : Ty _ Val) -> m (Expr var a) -> Expr var (f a)
+  up : {a : Ty _ Val} -> Expr var (f a) -> m (Expr var a)
+  down : (a : Ty _ Val) -> m (Expr var a) -> Expr var (f a)
 
 interface Split (0 a : Ty tyvar Val) where
   0 SplitTo : VarTy tyvar -> Type
@@ -42,7 +41,7 @@ Identity a = Newtype IdentityTag a
 
 Improve var Identity (Gen Val var) where
   up x = pure (Unwrap x)
-  down _ x = unGen x _ (Wrap _)
+  down a x = unGen x _ (Wrap _)
 
 List : Ty tyvar Val -> Ty tyvar Val
 List a = Fix (\list => Sum [One, Product [a, TyVar list]])
@@ -125,14 +124,14 @@ namespace TreeExample
       Nothing => pure nothing
       Just a => pure (just a)
 
-  fail : {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => {0 a : Ty tv Val} -> Expr var (MaybeT f a)
+  fail : {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => {a : Ty tv Val} -> Expr var (MaybeT f a)
   fail = down _ @{improveMaybeInstance} {m = MaybeT m} nothing
 
   MonadGen u var m => MonadGen u var (StateT s m) where
     liftGen = lift . liftGen
 
   [improveStateInstance]
-  {0 f : Ty tv Val -> Ty tv Val} -> {0 s : Ty tv Val} -> Improve var f m => Improve var (StateT s f) (StateT (Expr var s) m) where
+  {f : Ty tv Val -> Ty tv Val} -> {s : Ty tv Val} -> Improve var f m => Improve var (StateT s f) (StateT (Expr var s) m) where
     up x = ST $ \s => do
       h <- up {m = m} (App (Unwrap x) s)
       pure (First (Rest h), First h)
