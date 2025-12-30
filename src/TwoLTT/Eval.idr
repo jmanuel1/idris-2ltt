@@ -55,7 +55,7 @@ covering
 subInterpTy (SubFix t1 g) =
   cong Fix $
   funExt $ \t =>
-  subInterpTy g
+  subInterpTy (g t)
 subInterpTy (SubSum sub t2s sub1) =
   let prf = (subInterpTy sub)
       prf1 = (subInterpTy sub1)
