@@ -79,3 +79,7 @@ deepenElims {u = Comp} (Unwrap (Wrap tag x)) = deepenElims x
 deepenElims (Unwrap x) = Unwrap $ deepenElims x
 deepenElims (Roll x sub) = Roll (deepenElims x) sub
 deepenElims (Unroll x sub) = Unroll (deepenElims x) sub
+
+export
+saturateCalls : {u : U} -> {a : Ty tv u} -> Expr var a -> Expr var a
+saturateCalls e = e |> etaExpandCompLets |> etaExpandNonVariableAppHeads |> deepenElims

@@ -84,10 +84,30 @@ data Expr : VarTy tv -> Ty tv u -> Type where
     Expr var (Product (a :: as)) ->
     Expr var (Product as)
   -- Represent coercions explicitly in syntax
-  Wrap : (0 tag : Type) -> {0 a : Ty tv u} -> Expr var a -> Expr var (Newtype tag a)
-  Unwrap : {0 a : Ty tv u} -> Expr var (Newtype tag a) -> Expr var a
+  Wrap : (tag : Type) -> {0 a : Ty tv u} -> Expr var a -> Expr var (Newtype tag a)
+  Unwrap : {tag : Type} -> {0 a : Ty tv u} -> Expr var (Newtype tag a) -> Expr var a
   Roll : {0 unroll : Ty tv Val} -> {0 f : tv -> Ty tv Val} -> Expr var unroll -> (0 sub : Sub {var = tv} f (Fix f) unroll) -> Expr var (Fix f)
   Unroll : {0 unroll : Ty tv Val} -> {0 f : tv -> Ty tv Val} -> Expr var (Fix f) -> (0 sub : Sub {var = tv} f (Fix f) unroll) -> Expr var unroll
+
+export
+toString : Nat -> Expr {tv = Nat} (\_, _ => Nat) a -> String
+toString n (LetRec x t u) = "let rec x\{show n} : \{toString 0 x} = \{toString (n + 1) (t n)} in \{toString (n + 1) (u n)}"
+toString n (Let x t u) = "let x\{show n} : \{toString 0 x} = \{toString n t} in \{toString (n + 1) (u n)}"
+toString n (Absurd x) = "absurd (\{toString n x})"
+toString n (Match x f g) = "match \{toString n x} with x\{show n} => \{toString (n + 1) (f n)}; x\{show n} => \{toString (n + 1) (g n)}"
+toString n (Lam x t) = "\\x\{show n} => \{toString (n + 1) (t n)}"
+toString n (Var x) = "x\{show x}"
+toString n (App f arg) = "(\{toString n f}) (\{toString n arg})"
+toString n (Left x) = "Left (\{toString n x})"
+toString n (Right x) = "Right (\{toString n x})"
+toString n TT = "()"
+toString n (Prod x y) = "(\{toString n x}, \{toString n y})"
+toString n (First x) = "fst (\{toString n x})"
+toString n (Rest x) = "snd (\{toString n x})"
+toString n (Wrap tag x) = "Wrap (\{toString n x})"
+toString n (Unwrap {tag} x) = "unwrap (\{toString n x})"
+toString n (Roll x sub) = "Roll (\{toString n x})"
+toString n (Unroll x sub) = "unroll (\{toString n x})"
 
 public export
 0 Expr' : Ty tv u -> Type
