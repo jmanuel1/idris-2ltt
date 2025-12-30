@@ -51,3 +51,47 @@ etaExpandNonVariableAppHeads (Wrap tag x) = Wrap tag (etaExpandNonVariableAppHea
 etaExpandNonVariableAppHeads (Unwrap x) = Unwrap (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (Roll x sub) = Roll (etaExpandNonVariableAppHeads x) sub
 etaExpandNonVariableAppHeads (Unroll x sub) = Unroll (etaExpandNonVariableAppHeads x) sub
+
+||| Bring eliminators deeper into binders.
+deepenElims : Expr var a -> Expr var a
+deepenElims (LetRec x t u) = (LetRec x (\x => (deepenElims $ t x)) (\x => deepenElims $ u x))
+deepenElims (Let x t u) = (Let x (deepenElims t) $ \x => (deepenElims $ u x))
+deepenElims (Absurd x) = (Absurd (deepenElims x))
+deepenElims (Match x f g) = (Match x (\x => (deepenElims $ f x)) $ \x => (deepenElims $ g x))
+deepenElims (Lam x t) = (Lam x $ \x => (deepenElims $ t x))
+deepenElims e@(Var x) = e
+deepenElims (App (LetRec x t u) arg@(Var _)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ App (u x) arg)
+deepenElims (App (Let x t u) arg@(Var _)) = Let x (deepenElims t) (\x => deepenElims $ App (u x) arg)
+deepenElims (App (Match x f g) arg@(Var _)) = Match (deepenElims x) (\x => deepenElims $ App (f x) arg) (\x => deepenElims $ App (g x) arg)
+deepenElims (App (Lam a t) (Var arg)) = deepenElims $ t arg
+deepenElims (App f arg) = App (deepenElims f) (deepenElims arg)
+deepenElims (Left x) = Left $ deepenElims x
+deepenElims (Right x) = Right $ deepenElims x
+deepenElims TT = TT
+deepenElims (Prod x y) = Prod (deepenElims x) (deepenElims y)
+deepenElims (First (LetRec x t u)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ First $ u x)
+deepenElims (First (Let x t u)) = Let x (deepenElims t) (\x => deepenElims $ First $ u x)
+deepenElims (First (Match x f g)) = Match (deepenElims x) (\x => deepenElims $ First $ f x) (\x => deepenElims $ First $ g x)
+deepenElims (First (Prod x y)) = deepenElims x
+deepenElims (First x) = First $ deepenElims x
+deepenElims (Rest (LetRec x t u)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ Rest $ u x)
+deepenElims (Rest (Let x t u)) = Let x (deepenElims t) (\x => deepenElims $ Rest $ u x)
+deepenElims (Rest (Match x f g)) = Match (deepenElims x) (\x => deepenElims $ Rest $ f x) (\x => deepenElims $ Rest $ g x)
+deepenElims (Rest (Prod x y)) = deepenElims y
+deepenElims (Rest x) = Rest $ deepenElims x
+deepenElims (Wrap tag x) = Wrap tag $ deepenElims x
+deepenElims (Unwrap (LetRec x t u)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ Unwrap $ u x)
+deepenElims (Unwrap (Let x t u)) = Let x (deepenElims t) (\x => deepenElims $ Unwrap $ u x)
+deepenElims (Unwrap (Match x f g)) = Match (deepenElims x) (\x => deepenElims $ Unwrap $ f x) (\x => deepenElims $ Unwrap $ g x)
+deepenElims (Unwrap (Wrap tag x)) = deepenElims x
+deepenElims (Unwrap x) = Unwrap $ deepenElims x
+deepenElims (Roll x sub) = Roll (deepenElims x) sub
+deepenElims (Unroll (LetRec x t u) sub) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ Unroll (u x) sub)
+deepenElims (Unroll (Let x t u) sub) = Let x (deepenElims t) (\x => deepenElims $ Unroll (u x) sub)
+deepenElims (Unroll (Match x f g) sub) = Match (deepenElims x) (\x => deepenElims $ Unroll (f x) sub) (\x => deepenElims $ Unroll (g x) sub)
+deepenElims (Unroll (Roll x sub1) sub) =
+  -- rewrite (subUnique sub sub1) in
+  ?ghfjfgj
+deepenElims (Unroll x sub) = Unroll (deepenElims x) sub
+
+-- unrollRoll : (x : Expr var unroll) -> (sub1 : Sub f (Fix f) unroll) -> (sub2 : )
