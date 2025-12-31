@@ -109,6 +109,44 @@ toString n (Unwrap {tag} x) = "unwrap (\{toString n x})"
 toString n (Roll x sub) = "Roll (\{toString n x})"
 toString n (Unroll x sub) = "unroll (\{toString n x})"
 
+||| Check for equality of two expressions, ignoring types.
+export
+equal : Nat -> Expr (\_, _ => Nat) a -> Expr (\_, _ => Nat) b -> Bool
+equal n (LetRec x t u) (LetRec y s v) = equal (n + 1) (t n) (s n) && equal (n + 1) (u n) (v n)
+equal n (LetRec x t u) e2 = False
+equal n (Let {u = u1} x t u) (Let {u = u2} y s v) = equal n t s && equal (n + 1) (u n) (v n)
+equal n (Let x t u) e2 = False
+equal n (Absurd x) (Absurd y) = equal n x y
+equal n (Absurd x) e2 = False
+equal n (Match x f g) (Match y f' g') = equal n x y && equal (n + 1) (f n) (f' n) && equal (n + 1) (g n) (g' n)
+equal n (Match x f g) e2 = False
+equal n (Lam x t) (Lam y s) = equal (n + 1) (t n) (s n)
+equal n (Lam x t) e2 = False
+equal n (Var x) (Var y) = x == y
+equal n (Var x) e2 = False
+equal n (App f arg) (App g arg') = equal n f g && equal n arg arg'
+equal n (App f arg) e2 = False
+equal n (Left x) (Left y) = equal n x y
+equal n (Left x) e2 = False
+equal n (Right x) (Right y) = equal n x y
+equal n (Right x) e2 = False
+equal n TT TT = True
+equal n TT e2 = False
+equal n (Prod x y) (Prod w z) = equal n x w && equal n y z
+equal n (Prod x y) e2 = False
+equal n (First x) (First y) = equal n x y
+equal n (First x) e2 = False
+equal n (Rest x) (Rest y) = equal n x y
+equal n (Rest x) e2 = False
+equal n (Wrap tag x) (Wrap _ y) = equal n x y
+equal n (Wrap tag x) e2 = False
+equal n (Unwrap x) (Unwrap y) = equal n x y
+equal n (Unwrap x) e2 = False
+equal n (Roll x sub) (Roll y _) = equal n x y
+equal n (Roll x sub) e2 = False
+equal n (Unroll x sub) (Unroll y _) = equal n x y
+equal n (Unroll x sub) e2 = False
+
 public export
 0 Expr' : Ty tv u -> Type
 Expr' ty = forall var. Expr var ty

@@ -80,6 +80,44 @@ deepenElims (Unwrap x) = Unwrap $ deepenElims x
 deepenElims (Roll x sub) = Roll (deepenElims x) sub
 deepenElims (Unroll x sub) = Unroll (deepenElims x) sub
 
+covering
+fixpoint : {0 a : Ty tv u} -> ({0 var : VarTy tv} -> Expr var a -> Expr var a) -> ({0 var : VarTy tv} -> Expr var a) -> Expr var a
+fixpoint f e =
+  let e' : {0 var : VarTy tv} -> Expr var a := f e in
+  if equal 0 e e' then e' else fixpoint f e
+
+export covering
+saturateCalls : {u : U} -> {a : Ty tv u} -> Expr' a -> Expr var a
+saturateCalls e =
+  let e' : Expr' a := e |> etaExpandCompLets |> etaExpandNonVariableAppHeads in
+  fixpoint deepenElims e'
+
+-- TODO: traverse subterms
+||| For all computational subterms, test that constructors are on the outside.
+isEtaLong : {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => Bool) a -> Bool
+isEtaLong {u = Val} e = True
+isEtaLong {u = Comp} (Lam x t) = isEtaLong (t True)
+isEtaLong {u = Comp} (Wrap tag x) = isEtaLong x
+isEtaLong {u = Comp} _ = False
+
 export
-saturateCalls : {u : U} -> {a : Ty tv u} -> Expr var a -> Expr var a
-saturateCalls e = e |> etaExpandCompLets |> etaExpandNonVariableAppHeads |> deepenElims
+areCallsSaturated : Expr (\_, _ => Bool) a -> Bool
+areCallsSaturated (LetRec x t u) = isEtaLong (t True) && areCallsSaturated (t True) && areCallsSaturated (u True)
+areCallsSaturated (Let x t u) = isEtaLong t && areCallsSaturated (u True)
+areCallsSaturated (Absurd x) = areCallsSaturated x
+areCallsSaturated (Match x f g) = areCallsSaturated x && areCallsSaturated (f True) && areCallsSaturated (g True)
+areCallsSaturated (Lam x t) = areCallsSaturated (t True)
+areCallsSaturated (Var x) = x
+areCallsSaturated (App (Var f) arg) = f && areCallsSaturated arg
+areCallsSaturated (App f@(App _ _) arg) = areCallsSaturated f && areCallsSaturated arg
+areCallsSaturated (App f arg) = False
+areCallsSaturated (Left x) = areCallsSaturated x
+areCallsSaturated (Right x) = areCallsSaturated x
+areCallsSaturated TT = True
+areCallsSaturated (Prod x y) = areCallsSaturated x && areCallsSaturated y
+areCallsSaturated (First x) = areCallsSaturated x
+areCallsSaturated (Rest x) = areCallsSaturated x
+areCallsSaturated (Wrap tag x) = areCallsSaturated x
+areCallsSaturated (Unwrap x) = areCallsSaturated x
+areCallsSaturated (Roll x sub) = areCallsSaturated x
+areCallsSaturated (Unroll x sub) = areCallsSaturated x
