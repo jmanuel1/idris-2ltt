@@ -109,6 +109,26 @@ toString n (Unwrap {tag} x) = "unwrap (\{toString n x})"
 toString n (Roll x sub) = "Roll (\{toString n x})"
 toString n (Unroll x sub) = "unroll (\{toString n x})"
 
+export
+toStringWithoutTypes : Nat -> Expr (\_, _ => Nat) a -> String
+toStringWithoutTypes n (LetRec x t u) = "let rec x\{show n} = \{toStringWithoutTypes (n + 1) (t n)} in \{toStringWithoutTypes (n + 1) (u n)}"
+toStringWithoutTypes n (Let x t u) = "let x\{show n} = \{toStringWithoutTypes n t} in \{toStringWithoutTypes (n + 1) (u n)}"
+toStringWithoutTypes n (Absurd x) = "absurd (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Match x f g) = "match \{toStringWithoutTypes n x} with x\{show n} => \{toStringWithoutTypes (n + 1) (f n)}; x\{show n} => \{toStringWithoutTypes (n + 1) (g n)}"
+toStringWithoutTypes n (Lam x t) = "\\x\{show n} => \{toStringWithoutTypes (n + 1) (t n)}"
+toStringWithoutTypes n (Var x) = "x\{show x}"
+toStringWithoutTypes n (App f arg) = "(\{toStringWithoutTypes n f}) (\{toStringWithoutTypes n arg})"
+toStringWithoutTypes n (Left x) = "Left (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Right x) = "Right (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Prod x y) = "(\{toStringWithoutTypes n x}, \{toStringWithoutTypes n y})"
+toStringWithoutTypes n TT = "()"
+toStringWithoutTypes n (First x) = "fst (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Rest x) = "snd (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Wrap tag x) = "Wrap (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Unwrap {tag} x) = "unwrap (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Roll x sub) = "Roll (\{toStringWithoutTypes n x})"
+toStringWithoutTypes n (Unroll x sub) = "unroll (\{toStringWithoutTypes n x})"
+
 ||| Check for equality of two expressions, ignoring types.
 export
 equal : Nat -> Expr (\_, _ => Nat) a -> Expr (\_, _ => Nat) b -> Bool

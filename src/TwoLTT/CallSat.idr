@@ -1,6 +1,8 @@
 -- https://github.com/AndrasKovacs/staged/blob/c0cf3a58dcc8919aff7fb21391a860f9e8e7df64/icfp24paper/supplement/agda-opsem/README.agda#L17
 module TwoLTT.CallSat
 
+import Data.DPair
+import Debug.Trace
 import TwoLTT.Expr
 import TwoLTT.Types
 
@@ -57,14 +59,17 @@ deepenElims : {u : U} -> {0 a : Ty tv u} -> Expr var a -> Expr var a
 deepenElims (LetRec x t u) = (LetRec x (\x => (deepenElims $ t x)) (\x => deepenElims $ u x))
 deepenElims (Let x t u) = (Let x (deepenElims t) $ \x => (deepenElims $ u x))
 deepenElims (Absurd x) = (Absurd (deepenElims x))
-deepenElims (Match x f g) = (Match x (\x => (deepenElims $ f x)) $ \x => (deepenElims $ g x))
+deepenElims (Match x f g) = (Match (deepenElims x) (\x => (deepenElims $ f x)) $ \x => (deepenElims $ g x))
 deepenElims (Lam x t) = (Lam x $ \x => (deepenElims $ t x))
 deepenElims e@(Var x) = e
 deepenElims (App (LetRec x t u) arg@(Var _)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ App (u x) arg)
 deepenElims (App (Let x t u) arg@(Var _)) = Let x (deepenElims t) (\x => deepenElims $ App (u x) arg)
 deepenElims (App (Match x f g) arg@(Var _)) = Match (deepenElims x) (\x => deepenElims $ App (f x) arg) (\x => deepenElims $ App (g x) arg)
 deepenElims (App (Lam a t) (Var arg)) = deepenElims $ t arg
-deepenElims (App f arg) = App (deepenElims f) (deepenElims arg)
+-- Computational unwrap can be part of a saturated call spine
+-- deepenElims (App f@(Unwrap _) arg@(Var _)) = Let _ (deepenElims f) $ \x => App (Var x) $ deepenElims arg
+deepenElims (App f arg@(Var _)) = App (deepenElims f) arg
+deepenElims (App f arg) = Let _ (deepenElims arg) $ \x => App (deepenElims f) $ Var x
 deepenElims (Left x) = Left $ deepenElims x
 deepenElims (Right x) = Right $ deepenElims x
 deepenElims TT = TT
@@ -83,8 +88,10 @@ deepenElims (Unroll x sub) = Unroll (deepenElims x) sub
 covering
 fixpoint : {0 a : Ty tv u} -> ({0 var : VarTy tv} -> Expr var a -> Expr var a) -> ({0 var : VarTy tv} -> Expr var a) -> Expr var a
 fixpoint f e =
-  let e' : {0 var : VarTy tv} -> Expr var a := f e in
-  if equal 0 e e' then e' else fixpoint f e
+  let toStr : ((0 var : VarTy tv) -> Expr var a) -> String := \e => toStringWithoutTypes 0 (e _)
+      e' : (0 var : VarTy tv) -> Expr var a := ({-traceValBy toStr $-} (\_ => f e))
+      e'' : {0 var : VarTy tv} -> Expr var a := e' _ in
+  if equal 0 e e'' then e'' else fixpoint f e''
 
 export covering
 saturateCalls : {u : U} -> {a : Ty tv u} -> Expr' a -> Expr var a
@@ -92,32 +99,65 @@ saturateCalls e =
   let e' : Expr' a := e |> etaExpandCompLets |> etaExpandNonVariableAppHeads in
   fixpoint deepenElims e'
 
+public export
+ArbExpr : Type -> Type
+ArbExpr v = Exists $ \u => Exists $ \tv => Exists (Expr {u, tv} (\_, _ => v))
+
+public export
+data CallSatErr v = NotEtaLong (ArbExpr v) | NotSatCall (ArbExpr v)
+
+public export
+CallSatResult : Type -> Type
+CallSatResult v = Either (CallSatErr v) ()
+
 -- TODO: traverse subterms
 ||| For all computational subterms, test that constructors are on the outside.
-isEtaLong : {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => Bool) a -> Bool
-isEtaLong {u = Val} e = True
-isEtaLong {u = Comp} (Lam x t) = isEtaLong (t True)
+isEtaLong : Monoid v => {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => v) a -> (CallSatResult v)
+isEtaLong {u = Val} (LetRec x t u) = isEtaLong (t neutral) >> isEtaLong (u neutral)
+isEtaLong {u = Val} (Let x t u) = isEtaLong t >> isEtaLong (u neutral)
+isEtaLong {u = Val} (Absurd x) = isEtaLong x
+isEtaLong {u = Val} (Match x f g) = isEtaLong x >> isEtaLong (f neutral) >> isEtaLong (g neutral)
+isEtaLong {u = Val} (Var x) = Right ()
+isEtaLong {u = Val} (App f arg) = isEtaLong f >> isEtaLong arg
+isEtaLong {u = Val} (Left x) = isEtaLong x
+isEtaLong {u = Val} (Right x) = isEtaLong x
+isEtaLong {u = Val} TT = Right ()
+isEtaLong {u = Val} (Prod x y) = isEtaLong x >> isEtaLong y
+isEtaLong {u = Val} (First x) = isEtaLong x
+isEtaLong {u = Val} (Rest x) = isEtaLong x
+isEtaLong {u = Val} (Wrap tag x) = isEtaLong x
+isEtaLong {u = Val} (Unwrap x) = isEtaLong x
+isEtaLong {u = Val} (Roll x sub) = isEtaLong x
+isEtaLong {u = Val} (Unroll x sub) = isEtaLong x
+isEtaLong {u = Comp} (Lam x t) = isEtaLong (t neutral)
 isEtaLong {u = Comp} (Wrap tag x) = isEtaLong x
-isEtaLong {u = Comp} _ = False
+isEtaLong {u = Comp} e = Left (NotEtaLong (Evidence _ (Evidence _ (Evidence _ e))))
 
 export
-areCallsSaturated : Expr (\_, _ => Bool) a -> Bool
-areCallsSaturated (LetRec x t u) = isEtaLong (t True) && areCallsSaturated (t True) && areCallsSaturated (u True)
-areCallsSaturated (Let x t u) = isEtaLong t && areCallsSaturated (u True)
+areCallsSaturated : Monoid v => {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => v) a -> CallSatResult v
+areCallsSaturated e@(LetRec x t u) =
+  isEtaLong (t neutral) >> areCallsSaturated (t neutral) >> areCallsSaturated (u neutral)
+areCallsSaturated e@(Let x t u) =
+  isEtaLong t >> areCallsSaturated t >> areCallsSaturated (u neutral)
 areCallsSaturated (Absurd x) = areCallsSaturated x
-areCallsSaturated (Match x f g) = areCallsSaturated x && areCallsSaturated (f True) && areCallsSaturated (g True)
-areCallsSaturated (Lam x t) = areCallsSaturated (t True)
-areCallsSaturated (Var x) = x
-areCallsSaturated (App (Var f) arg) = f && areCallsSaturated arg
-areCallsSaturated (App f@(App _ _) arg) = areCallsSaturated f && areCallsSaturated arg
-areCallsSaturated (App f arg) = False
+areCallsSaturated (Match x f g) = areCallsSaturated x >> areCallsSaturated (f neutral) >> areCallsSaturated (g neutral)
+areCallsSaturated (Lam x t) = areCallsSaturated (t neutral)
+areCallsSaturated (Var x) = Right ()
+areCallsSaturated (App (Var f) arg) = areCallsSaturated arg
+areCallsSaturated (App f@(App _ _) arg) = areCallsSaturated f >> areCallsSaturated arg
+areCallsSaturated (App f@(Unwrap _) arg) = areCallsSaturated f >> areCallsSaturated arg
+areCallsSaturated e@(App f arg) = Left (NotSatCall $ Evidence _ (Evidence _ (Evidence _ e)))
 areCallsSaturated (Left x) = areCallsSaturated x
 areCallsSaturated (Right x) = areCallsSaturated x
-areCallsSaturated TT = True
-areCallsSaturated (Prod x y) = areCallsSaturated x && areCallsSaturated y
+areCallsSaturated TT = Right ()
+areCallsSaturated (Prod x y) = areCallsSaturated x >> areCallsSaturated y
 areCallsSaturated (First x) = areCallsSaturated x
 areCallsSaturated (Rest x) = areCallsSaturated x
 areCallsSaturated (Wrap tag x) = areCallsSaturated x
+areCallsSaturated {u = Comp} (Unwrap x@(App _ _)) = areCallsSaturated x
+areCallsSaturated {u = Comp} (Unwrap x@(Unwrap _)) = areCallsSaturated x
+areCallsSaturated {u = Comp} (Unwrap (Var _)) = Right ()
+areCallsSaturated {u = Comp} e@(Unwrap x) = Left (NotSatCall $ Evidence _ (Evidence _ (Evidence _ e)))
 areCallsSaturated (Unwrap x) = areCallsSaturated x
 areCallsSaturated (Roll x sub) = areCallsSaturated x
 areCallsSaturated (Unroll x sub) = areCallsSaturated x
