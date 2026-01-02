@@ -34,7 +34,7 @@ data Expr : VarTy tv -> Ty tv u -> Type where
   Absurd : Expr var (Sum []) -> {0 a : Ty tv u} -> Expr var a
   Match :
     {0 a : Ty tv u} ->
-    {0 ds : Vect (S n) (Ty tv Val)} ->
+    {ds : Vect (S n) (Ty tv Val)} -> -- unerased for call saturation (eta expansion)
     Expr var (Sum ds) ->
     (var _ (head ds) -> Expr var a) ->
     (var _ (Sum $ tail ds) -> Expr var a) ->
@@ -75,19 +75,29 @@ data Expr : VarTy tv -> Ty tv u -> Type where
     Expr var (Product (a :: b))
   First :
     {0 a : Ty tv Val} ->
-    {0 as : Vect n (Ty tv Val)} ->
+    {as : Vect n (Ty tv Val)} -> -- unerased for call saturation (eta expansion)
     Expr var (Product (a :: as)) ->
     Expr var a
   Rest :
-    {0 a : Ty tv Val} ->
+    {a : Ty tv Val} -> -- unerased for call saturation (eta expansion)
     {0 as : Vect n (Ty tv Val)} ->
     Expr var (Product (a :: as)) ->
     Expr var (Product as)
   -- Represent coercions explicitly in syntax
   Wrap : (tag : Type) -> {0 a : Ty tv u} -> Expr var a -> Expr var (Newtype tag a)
   Unwrap : {tag : Type} -> {0 a : Ty tv u} -> Expr var (Newtype tag a) -> Expr var a
-  Roll : {0 unroll : Ty tv Val} -> {0 f : tv -> Ty tv Val} -> Expr var unroll -> (0 sub : Sub {var = tv} f (Fix f) unroll) -> Expr var (Fix f)
-  Unroll : {0 unroll : Ty tv Val} -> {0 f : tv -> Ty tv Val} -> Expr var (Fix f) -> (0 sub : Sub {var = tv} f (Fix f) unroll) -> Expr var unroll
+  Roll :
+    {unroll : Ty tv Val} -> -- unerased for call saturation (eta expansion)
+    {0 f : tv -> Ty tv Val} ->
+    Expr var unroll ->
+    (0 sub : Sub {var = tv} f (Fix f) unroll) ->
+    Expr var (Fix f)
+  Unroll :
+    {0 unroll : Ty tv Val} ->
+    {f : tv -> Ty tv Val} -> -- unerased for call saturation (eta expansion)
+    Expr var (Fix f) ->
+    (0 sub : Sub {var = tv} f (Fix f) unroll) ->
+    Expr var unroll
 
 export
 toString : Nat -> Expr {tv = Nat} (\_, _ => Nat) a -> String

@@ -20,7 +20,7 @@ CaseArms {n = 0} _ var mot = []
 CaseArms {n = S n} ds var mot =
   (var _ (head ds) -> Expr var mot) :: CaseArms (tail ds) var mot
 
-Case : {0 var : VarTy tv} -> {0 n : Nat} -> {0 ds : Vect n (Ty tv Val)} -> {0 motive : Ty tv u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
+Case : {0 var : VarTy tv} -> {0 n : Nat} -> {ds : Vect n (Ty tv Val)} -> {0 motive : Ty tv u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
 Case e [] {ds} =
   Absurd $ rewrite (sym $ invertVectZ ds) in e
 Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)
@@ -46,7 +46,7 @@ Improve var Identity (Gen Val var) where
 List : Ty tyvar Val -> Ty tyvar Val
 List a = Fix (\list => Sum [One, Product [a, TyVar list]])
 
-{0 a : Ty tyvar Val} -> Split (List a) where
+{a : Ty tyvar Val} -> Split (List a) where
   SplitTo var = Maybe (Expr var a, Expr var (List a))
   split _ as = MkGen $ \_, k =>
     Case (Unroll as %search) [
@@ -61,10 +61,10 @@ namespace TreeExample
   Tree : Ty tyvar Val -> Ty tyvar Val
   Tree a = Fix $ TreeF a
 
-  leaf : {0 a : Ty tyvar Val} -> Expr var (Tree a)
+  leaf : {a : Ty tyvar Val} -> Expr var (Tree a)
   leaf = Roll (Left TT) %search
 
-  node : {0 a : Ty tyvar Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> Expr var (Tree a)
+  node : {a : Ty tyvar Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> Expr var (Tree a)
   node n l r =
     Roll (Right $ Left $ Prod n (Prod l $ Prod r TT)) %search
 
@@ -72,7 +72,7 @@ namespace TreeExample
     Leaf : {0 a : Ty tyvar Val} -> TreeSplit var a
     Node : {0 a : Ty tyvar Val} -> Expr var a -> (l, r : Expr var (Tree a)) -> TreeSplit var a
 
-  {0 a : Ty tyvar Val} -> Split (Tree a) where
+  {a : Ty tyvar Val} -> Split (Tree a) where
     SplitTo var = TreeSplit var a
     split _ as = MkGen $ \_, k =>
       Case (Unroll as %search) [\_ => k Leaf, \node => k (Node (First (Var node)) (First (Rest (Var node))) (First (Rest (Rest (Var node)))))]
@@ -94,7 +94,7 @@ namespace TreeExample
   just : {0 a : Ty tyvar Val} -> Expr var a -> Expr var (Maybe a)
   just a = Right $ Left a
 
-  {0 a : Ty tyvar Val} -> Split (Maybe a) where
+  {a : Ty tyvar Val} -> Split (Maybe a) where
     SplitTo var = Maybe (Expr var a)
     split _ ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
 
