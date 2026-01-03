@@ -8,15 +8,42 @@ import TwoLTT.Types
 
 %default total
 
+etaExpandRec : {u : U} -> {ty : Ty tv u} -> Expr var ty -> Expr var ty
+etaExpand' : {u : U} -> {ty : Ty tv u} -> Expr var ty -> Expr var ty
 etaExpand : {ty : Ty tv Comp} -> Expr var ty -> Expr var ty
-etaExpand {ty = (Fun x {u = Val} y)} e = Lam x (\x => App e (Var x))
+
+etaExpand {ty = (Fun x {u = Comp} y)} (Lam x e) = Lam x (\x => etaExpand (e x))
+etaExpand {ty = (Fun x y)} f@(Lam x e) = f
 etaExpand {ty = (Fun x {u = Comp} y)} e = Lam x (\x => etaExpand (App e (Var x)))
+etaExpand {ty = (Fun x y)} e = Lam x (\x => (App e (Var x)))
+etaExpand {ty = (Newtype tag x)} (Wrap tag e) = Wrap tag (etaExpand e)
 etaExpand {ty = (Newtype tag x)} e = Wrap tag (etaExpand (Unwrap e))
 
+etaExpand' {u = Comp} e = etaExpand $ etaExpandRec e
+etaExpand' {u = Val} e = etaExpandRec e
+
+etaExpandRec (Lam x e) = Lam x (\x => etaExpand' (e x))
+etaExpandRec (LetRec a t f) = LetRec a (\x => etaExpand' (t x)) (\x => etaExpand' (f x))
+etaExpandRec (Let a t f) = Let a (etaExpand' (t)) (\x => etaExpand' (f x))
+etaExpandRec (Absurd x) = Absurd (etaExpandRec x)
+etaExpandRec (Match x f g) = Match (etaExpandRec x) (\x => etaExpand' (f x)) (\x => etaExpand' (g x))
+etaExpandRec e@(Var x) = e
+etaExpandRec (App f arg) = App (etaExpand' f) (etaExpand' arg)
+etaExpandRec (Left x) = Left (etaExpandRec x)
+etaExpandRec (Right x) = Right (etaExpandRec x)
+etaExpandRec TT = TT
+etaExpandRec (Prod x y) = Prod (etaExpandRec x) (etaExpandRec y)
+etaExpandRec (First x) = First (etaExpandRec x)
+etaExpandRec (Rest x) = Rest (etaExpandRec x)
+etaExpandRec (Wrap tag x) = Wrap tag (etaExpand' x)
+etaExpandRec (Unwrap x) = Unwrap (etaExpand' x)
+etaExpandRec (Roll x sub) = Roll (etaExpandRec x) sub
+etaExpandRec (Unroll x sub) = Unroll (etaExpandRec x) sub
+
 etaExpandCompLets : Expr var ty -> Expr var ty
-etaExpandCompLets (LetRec a t u) = LetRec a (\x => etaExpand $ etaExpandCompLets (t x)) (\x => etaExpandCompLets (u x))
-etaExpandCompLets (Let {u = Val} a t e) = Let a t (\x => etaExpandCompLets (e x))
-etaExpandCompLets (Let {u = Comp} a t e) = Let a (etaExpand $ etaExpandCompLets t) (\x => etaExpandCompLets (e x))
+etaExpandCompLets (LetRec a t u) = LetRec a (\x => etaExpand' $ etaExpandCompLets (t x)) (\x => etaExpandCompLets (u x))
+etaExpandCompLets (Let {u = Val} a t e) = Let a (etaExpandCompLets t) (\x => etaExpandCompLets (e x))
+etaExpandCompLets (Let {u = Comp} a t e) = Let a (etaExpand' $ etaExpandCompLets t) (\x => etaExpandCompLets (e x))
 etaExpandCompLets (Absurd x) = Absurd (etaExpandCompLets x)
 etaExpandCompLets (Match x f g) = Match (etaExpandCompLets x) (\x => etaExpandCompLets (f x)) (\x => etaExpandCompLets (g x))
 etaExpandCompLets (Lam a t) = Lam a (\x => etaExpandCompLets (t x))
@@ -33,10 +60,15 @@ etaExpandCompLets (Unwrap x) = Unwrap (etaExpandCompLets x)
 etaExpandCompLets (Roll x sub) = Roll (etaExpandCompLets x) sub
 etaExpandCompLets (Unroll x sub) = Unroll (etaExpandCompLets x) sub
 
-etaExpandNonVariableAppHeads : Expr var ty -> Expr var ty
+etaExpandNonVariableAppHeads : {u : U} -> {0 ty : Ty tv u} -> Expr var ty -> Expr var ty
 etaExpandNonVariableAppHeads (App f@(Var _) x) = App f (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (App f@(App _ _) x) = App (etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
-etaExpandNonVariableAppHeads (App f x) = App (etaExpand $ etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
+etaExpandNonVariableAppHeads (App f@(Unwrap _) x) = App (etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
+etaExpandNonVariableAppHeads (App f x) = App (etaExpand' $ etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
+etaExpandNonVariableAppHeads {u = Comp} e@(Unwrap (Var x)) =  e
+etaExpandNonVariableAppHeads {u = Comp} (Unwrap f@(App _ _)) = Unwrap (etaExpandNonVariableAppHeads f)
+etaExpandNonVariableAppHeads {u = Comp} (Unwrap f@(Unwrap _)) = Unwrap (etaExpandNonVariableAppHeads f)
+etaExpandNonVariableAppHeads {u = Comp} (Unwrap x) = Unwrap (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (LetRec a t u) = LetRec a (\x => etaExpandNonVariableAppHeads (t x)) (\x => etaExpandNonVariableAppHeads $ u x)
 etaExpandNonVariableAppHeads (Let a t u) = Let a (etaExpandNonVariableAppHeads t) (\x => (etaExpandNonVariableAppHeads (u x)))
 etaExpandNonVariableAppHeads (Absurd x) = Absurd (etaExpandNonVariableAppHeads x)
@@ -110,7 +142,6 @@ public export
 CallSatResult : Type -> Type
 CallSatResult v = Either (CallSatErr v) ()
 
--- TODO: traverse subterms
 ||| For all computational subterms, test that constructors are on the outside.
 isEtaLong : Monoid v => {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => v) a -> (CallSatResult v)
 isEtaLong {u = Val} (LetRec x t u) = isEtaLong (t neutral) >> isEtaLong (u neutral)
@@ -118,7 +149,8 @@ isEtaLong {u = Val} (Let x t u) = isEtaLong t >> isEtaLong (u neutral)
 isEtaLong {u = Val} (Absurd x) = isEtaLong x
 isEtaLong {u = Val} (Match x f g) = isEtaLong x >> isEtaLong (f neutral) >> isEtaLong (g neutral)
 isEtaLong {u = Val} (Var x) = Right ()
-isEtaLong {u = Val} (App f arg) = isEtaLong f >> isEtaLong arg
+-- spine of computation eliminator
+isEtaLong {u = Val} (App f arg) = {-isEtaLong f >>-} isEtaLong arg
 isEtaLong {u = Val} (Left x) = isEtaLong x
 isEtaLong {u = Val} (Right x) = isEtaLong x
 isEtaLong {u = Val} TT = Right ()
@@ -131,14 +163,19 @@ isEtaLong {u = Val} (Roll x sub) = isEtaLong x
 isEtaLong {u = Val} (Unroll x sub) = isEtaLong x
 isEtaLong {u = Comp} (Lam x t) = isEtaLong (t neutral)
 isEtaLong {u = Comp} (Wrap tag x) = isEtaLong x
+-- spine of computation eliminator
+-- FIXME: Too loose
+isEtaLong {u = Comp} (Unwrap x) = Right ()
 isEtaLong {u = Comp} e = Left (NotEtaLong (Evidence _ (Evidence _ (Evidence _ e))))
 
 export
 areCallsSaturated : Monoid v => {u : U} -> {0 a : Ty tv u} -> Expr (\_, _ => v) a -> CallSatResult v
 areCallsSaturated e@(LetRec x t u) =
   isEtaLong (t neutral) >> areCallsSaturated (t neutral) >> areCallsSaturated (u neutral)
-areCallsSaturated e@(Let x t u) =
+areCallsSaturated e@(Let {u = Comp} x t u) =
   isEtaLong t >> areCallsSaturated t >> areCallsSaturated (u neutral)
+areCallsSaturated e@(Let {u = _} x t u) =
+  areCallsSaturated t >> areCallsSaturated (u neutral)
 areCallsSaturated (Absurd x) = areCallsSaturated x
 areCallsSaturated (Match x f g) = areCallsSaturated x >> areCallsSaturated (f neutral) >> areCallsSaturated (g neutral)
 areCallsSaturated (Lam x t) = areCallsSaturated (t neutral)
