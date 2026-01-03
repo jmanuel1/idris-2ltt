@@ -1,6 +1,6 @@
 module TwoLTT.Eval
 
-import Control.Function
+import Control.Function.FunExt.Axiom
 import Control.Relation
 import Data.DPair
 import Data.Singleton
@@ -50,15 +50,12 @@ interpCompTy (Fun arg {u = Comp} ret) =
 interpCompTy (Fun arg {u = Val} ret) = ((_ ** [interpTy arg]), InterpValTy ret)
 interpCompTy (Newtype _ ty) = interpCompTy ty
 
-0 funExt : ((x : a) -> f x = g x) -> f = g
-funExt _ = believe_me (Refl {x = f})
-
 covering
 0 subInterpTy : Sub f s ty -> (InterpValTy (f (InterpValTy s))) === (InterpValTy ty)
 subInterpTy (SubFix t1 g) =
   cong Fix $
   funExt $ \t =>
-  subInterpTy g
+  subInterpTy (g t)
 subInterpTy (SubSum sub t2s sub1) =
   let prf = (subInterpTy sub)
       prf1 = (subInterpTy sub1)

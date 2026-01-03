@@ -4,7 +4,6 @@ import Control.Monad.Maybe
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Either
-import Data.List.Erased
 import Data.Morphisms.Iso
 import Data.SOP.NS
 import TwoLTT.Expr
@@ -14,12 +13,12 @@ import TwoLTT.Types
 %default total
 
 public export
-data NP_ : (0 a : Type) -> (a -> Type) -> ErasedList a -> Type where
+data NP_ : (0 a : Type) -> (a -> Type) -> List a -> Type where
   Nil : NP_ a f []
   (::) : f x -> NP_ a f xs -> NP_ a f (x :: xs)
 
 public export
-0 NP : (a -> Type) -> ErasedList a -> Type
+0 NP : (a -> Type) -> List a -> Type
 NP f xs = NP_ a f xs
 
 append : NP f ks -> NP f ks' -> NP f (ks ++ ks')
@@ -29,8 +28,8 @@ append (x :: xs) ys = x :: append xs ys
 -- Not having eta for records is getting in the way of me proving things about
 -- SOP from the sop package. So here's my own version
 public export
-0 SOP : (a -> Type) -> List (ErasedList a) -> Type
-SOP f xs = NS_ (ErasedList a) (\xs => NP_ a f xs) xs
+0 SOP : (a -> Type) -> List (List a) -> Type
+SOP f xs = NS_ (List a) (\xs => NP_ a f xs) xs
 
 export
 Uninhabited (SOP f []) where
@@ -38,7 +37,7 @@ Uninhabited (SOP f []) where
 
 public export
 0 U_SOP : Type -> Type
-U_SOP tv = List (ErasedList (Ty tv Val))
+U_SOP tv = List (List (Ty tv Val))
 
 public export
 0 El_SOP : U_SOP tv -> VarTy tv -> Type
@@ -73,11 +72,11 @@ export
         cong S $ (rep {var}).inverseR sop
   }
 
-distributeSop : ErasedList a -> List (ErasedList a) -> List (ErasedList a)
+distributeSop : List a -> List (List a) -> List (List a)
 distributeSop pa [] = []
 distributeSop pa (pb :: pbs) = (pa ++ pb) :: distributeSop pa pbs
 
-cartesianSop : (sopa, sopb : List (ErasedList a)) -> List (ErasedList a)
+cartesianSop : (sopa, sopb : List (List a)) -> List (List a)
 cartesianSop [] _ = []
 cartesianSop (pa :: pas) sopb = distributeSop pa sopb ++ cartesianSop pas sopb
 
@@ -85,7 +84,7 @@ leftSop : SOP f kss -> SOP f (kss ++ lss)
 leftSop (Z a) = Z a
 leftSop (S a) = S (leftSop a)
 
-rightSop : {lss : List (ErasedList a)} -> SOP f kss -> SOP f (lss ++ kss)
+rightSop : {lss : List (List a)} -> SOP f kss -> SOP f (lss ++ kss)
 rightSop {lss = []} x = x
 rightSop {lss = ls :: lss} x = S (rightSop x)
 
@@ -93,7 +92,7 @@ pairPSop : NP f ks -> SOP f kss -> SOP f (distributeSop ks kss)
 pairPSop x (Z y) = Z (append x y)
 pairPSop x (S y) = S (pairPSop x y)
 
-sopProduct : {kss, lss : List (ErasedList k)} -> SOP f kss -> SOP f lss -> SOP f (cartesianSop kss lss)
+sopProduct : {kss, lss : List (List k)} -> SOP f kss -> SOP f lss -> SOP f (cartesianSop kss lss)
 sopProduct {kss = .(ks :: kss)} (Z v) y = leftSop (pairPSop v y)
 sopProduct (S x) y = rightSop (sopProduct x y)
 
@@ -103,17 +102,17 @@ splitNs (x :: xs) (Z v) = Left (Z v)
 splitNs (x :: xs) (S y) = mapFst S (splitNs xs y)
 
 -- Using this instead of `Data.SOP.NP.narrow` to make proofs easier.
-unpairP : {a : ErasedList k} -> NP f (a ++ b) -> (NP f a, NP f b)
+unpairP : {a : List k} -> NP f (a ++ b) -> (NP f a, NP f b)
 unpairP {a = []} x = ([], x)
 unpairP {a = a :: as} (x :: y) =
   mapFst (x ::) $ unpairP {a = as} y
 
-unpairPNs : (ks : ErasedList k) -> (lss : List (ErasedList k)) -> NS (NP f) (distributeSop ks lss) -> (NP f ks, NS (NP f) lss)
+unpairPNs : (ks : List k) -> (lss : List (List k)) -> NS (NP f) (distributeSop ks lss) -> (NP f ks, NS (NP f) lss)
 unpairPNs _ [] s impossible
 unpairPNs ks (x :: xs) (Z p) = mapSnd Z (unpairP p)
 unpairPNs ks (x :: xs) (S s) = mapSnd S (unpairPNs _ _ s)
 
-unpairSop : (kss, lss : List (ErasedList k)) -> SOP f (cartesianSop kss lss) -> (SOP f kss, SOP f lss)
+unpairSop : (kss, lss : List (List k)) -> SOP f (cartesianSop kss lss) -> (SOP f kss, SOP f lss)
 unpairSop (ks :: kss) (ls :: lss) (Z v) =
   bimap Z Z (unpairP v)
 unpairSop (ks :: kss) (ls :: lss) (S x) =
@@ -139,14 +138,14 @@ hetTrans x x x Refl Refl = Refl
 0 etaPair : (x : (a, b)) -> (fst x, snd x) = x
 etaPair (x1, x2) = Refl
 
-0 pairPEta : (ks, ls : ErasedList k) -> (p : NP f (ks ++ ls)) -> append {ks, ks' = ls} (fst (unpairP {a = ks, b = ls} p)) (snd (unpairP {a = ks, b = ls} p)) = p
+0 pairPEta : (ks, ls : List k) -> (p : NP f (ks ++ ls)) -> append {ks, ks' = ls} (fst (unpairP {a = ks, b = ls} p)) (snd (unpairP {a = ks, b = ls} p)) = p
 pairPEta [] ls p = Refl
 pairPEta (k :: ks) ls (v :: vs) =
   replace {p = \up => append (fst (bimap (\arg => v :: arg) id up)) (snd (bimap (\arg => v :: arg) id up)) = v :: vs} (etaPair (unpairP vs)) $
   cong (v ::) $ pairPEta ks ls vs
 
 0 leftSopBeta :
-  {0 lss : List (ErasedList k)} ->
+  {0 lss : List (List k)} ->
   {0 f : k -> Type} ->
   (s : NS (NP f) kss) ->
   splitNs kss {ls = lss} (leftSop {lss} s) = Left s
@@ -155,7 +154,7 @@ leftSopBeta {kss = .(_ :: kss)} (S x) =
   rewrite leftSopBeta {k, lss, f, kss} x in
   Refl
 
-0 rightSopBeta : (kss : List (ErasedList k)) -> splitNs kss (rightSop {lss = kss} sop) = Right sop
+0 rightSopBeta : (kss : List (List k)) -> splitNs kss (rightSop {lss = kss} sop) = Right sop
 rightSopBeta [] = Refl
 rightSopBeta (x :: xs) =
   rewrite rightSopBeta xs {sop} in
@@ -186,7 +185,7 @@ pairSopBeta {kss = .(ks :: [])} (S x) y impossible
 pairSopBeta {kss = []} x s impossible
 pairSopBeta {lss = []} x s impossible
 
-0 pairPSopEta : (ys : List (ErasedList k)) -> (distSop : SOP f (distributeSop y ys)) -> pairPSop (fst (unpairPNs y ys distSop)) (snd (unpairPNs y ys distSop)) = distSop
+0 pairPSopEta : (ys : List (List k)) -> (distSop : SOP f (distributeSop y ys)) -> pairPSop (fst (unpairPNs y ys distSop)) (snd (unpairPNs y ys distSop)) = distSop
 pairPSopEta [] distSop impossible
 pairPSopEta (x :: xs) (Z p) =
   rewrite sym $ etaPair {a = NP f y, b = NP f x} (unpairP p) in
@@ -208,9 +207,9 @@ Injective (NS.S {f, ks, t}) where
   injective Refl = Refl
 
 splitLeftInvert :
-  (xs : List (ErasedList k)) ->
-  (ys : List (ErasedList k)) ->
-  (s : NS_ (ErasedList k) (NP_ k f) (ys ++ xs)) ->
+  (xs : List (List k)) ->
+  (ys : List (List k)) ->
+  (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
   {distSop : SOP f ys} ->
   splitNs ys {ls = xs} s = Left distSop ->
   leftSop {lss = xs, kss = ys} distSop = s
@@ -229,9 +228,9 @@ splitLeftInvert xs (x :: ys) (S s) {distSop = S distSop} prf =
   cong Left (sym helperPrf)
 
 splitRightInvert :
-  (xs : List (ErasedList k)) ->
-  (ys : List (ErasedList k)) ->
-  (s : NS_ (ErasedList k) (NP_ k f) (ys ++ xs)) ->
+  (xs : List (List k)) ->
+  (ys : List (List k)) ->
+  (s : NS_ (List k) (NP_ k f) (ys ++ xs)) ->
   {sop : SOP f xs} ->
   splitNs ys {ls = xs} s = Right sop ->
   rightSop {lss = ys, kss = xs} sop = s
@@ -246,7 +245,7 @@ splitRightInvert (x :: xs) (y :: ys) (S z) prf =
   trans invertPrf $
   sym $ cong Right helperPrf
 
-0 pairSopEta : (kss, lss : List (ErasedList k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
+0 pairSopEta : (kss, lss : List (List k)) -> (x : SOP f (cartesianSop kss lss)) -> sopProduct (fst (unpairSop kss lss x)) (snd (unpairSop kss lss x)) = x
 pairSopEta [] _ x impossible
 pairSopEta (y :: xs) [] x = absurd (snd (unpairSop xs [] x))
 pairSopEta (y :: xs) (z :: ys) (Z p) =
@@ -285,7 +284,7 @@ IsSOP tv var a => IsSOP tv var b => IsSOP tv var (a, b) where
   }
 
 export
-{0 a : Ty tv Val} -> IsSOP tv v (Expr v a) where
+{a : Ty tv Val} -> IsSOP tv v (Expr v a) where
   Rep = [[a]]
   rep = MkIso {
     forwards = \e => Z [e],
@@ -316,7 +315,7 @@ MultiArgFunU 0 = id
 MultiArgFunU _ = const Comp
 
 public export
-0 MultiArgFun : (args : ErasedList (Ty tv Val)) -> Ty tv u -> Ty tv (MultiArgFunU (length args) u)
+MultiArgFun : (args : List (Ty tv Val)) -> {u : U} -> Ty tv u -> Ty tv (MultiArgFunU (length args) u)
 MultiArgFun [] ret = ret
 MultiArgFun (arg :: args) ret = Fun arg (MultiArgFun args ret)
 
@@ -338,10 +337,10 @@ tabulate {a = (z :: zs) :: xs} f =
   (Lam _ (fst . rec2 . Var), rec)
 
 export
-index : {a : _} -> {0 r : Ty tv u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
+index : {a : _} -> {u : U} -> {r : Ty tv u} -> Fun_SOPLift a r var -> (El_SOP a var -> Expr var r)
 index {a = .([] :: xs)} (res, fs) (Z []) = res
 index {a = _ :: xs} (res, fs) (S p) = index fs p
-index {a = (_ :: ys) :: xs} (f, fs) (Z (first :: rest)) =
+index {a = (y :: ys) :: xs} (f, fs) (Z (first :: rest)) =
   let app = App f first
       rec = index {a = ys :: xs} (app, fs) in
   rec (Z rest)
@@ -353,7 +352,7 @@ genFun_SOPLift :
   {0 tv : Type} ->
   {a : U_SOP tv} ->
   {v : U} ->
-  {0 r : Ty tv v} ->
+  {r : Ty tv v} ->
   {0 u : U} ->
   {0 var : VarTy tv} ->
   Fun_SOPLift a r var ->
