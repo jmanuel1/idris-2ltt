@@ -2,6 +2,7 @@ module TwoLTT.Expr
 
 import public Data.Vect
 ------ ^ for matching on constructors
+import Data.Vect.Quantifiers
 import TwoLTT.Types
 import public TwoLTT.Types.Sub
 --     ^ for instance search
@@ -84,8 +85,6 @@ data Expr : VarTy tv -> Ty tv u -> Type where
     Expr var (Product (a :: as)) ->
     Expr var (Product as)
   -- Represent coercions explicitly in syntax
-  Wrap : (tag : Type) -> {0 a : Ty tv u} -> Expr var a -> Expr var (Newtype tag a)
-  Unwrap : {tag : Type} -> {0 a : Ty tv u} -> Expr var (Newtype tag a) -> Expr var a
   Roll :
     {unroll : Ty tv Val} -> -- unerased for call saturation (eta expansion)
     {0 f : tv -> Ty tv Val} ->
@@ -114,8 +113,6 @@ toString n TT = "()"
 toString n (Prod x y) = "(\{toString n x}, \{toString n y})"
 toString n (First x) = "fst (\{toString n x})"
 toString n (Rest x) = "snd (\{toString n x})"
-toString n (Wrap tag x) = "Wrap (\{toString n x})"
-toString n (Unwrap {tag} x) = "unwrap (\{toString n x})"
 toString n (Roll x sub) = "Roll (\{toString n x})"
 toString n (Unroll x sub) = "unroll (\{toString n x})"
 
@@ -134,8 +131,6 @@ toStringWithoutTypes n (Prod x y) = "(\{toStringWithoutTypes n x}, \{toStringWit
 toStringWithoutTypes n TT = "()"
 toStringWithoutTypes n (First x) = "fst (\{toStringWithoutTypes n x})"
 toStringWithoutTypes n (Rest x) = "snd (\{toStringWithoutTypes n x})"
-toStringWithoutTypes n (Wrap tag x) = "Wrap (\{toStringWithoutTypes n x})"
-toStringWithoutTypes n (Unwrap {tag} x) = "unwrap (\{toStringWithoutTypes n x})"
 toStringWithoutTypes n (Roll x sub) = "Roll (\{toStringWithoutTypes n x})"
 toStringWithoutTypes n (Unroll x sub) = "unroll (\{toStringWithoutTypes n x})"
 
@@ -168,10 +163,6 @@ equal n (First x) (First y) = equal n x y
 equal n (First x) e2 = False
 equal n (Rest x) (Rest y) = equal n x y
 equal n (Rest x) e2 = False
-equal n (Wrap tag x) (Wrap _ y) = equal n x y
-equal n (Wrap tag x) e2 = False
-equal n (Unwrap x) (Unwrap y) = equal n x y
-equal n (Unwrap x) e2 = False
 equal n (Roll x sub) (Roll y _) = equal n x y
 equal n (Roll x sub) e2 = False
 equal n (Unroll x sub) (Unroll y _) = equal n x y
@@ -180,3 +171,15 @@ equal n (Unroll x sub) e2 = False
 public export
 0 Expr' : Ty tv u -> Type
 Expr' ty = forall var. Expr var ty
+
+public export
+0 CaseArms : {n : Nat} -> (0 ds : Vect n (Ty tyvar Val)) -> VarTy tyvar -> Ty tyvar u -> Vect n Type
+CaseArms {n = 0} _ var mot = []
+CaseArms {n = S n} ds var mot =
+  (var _ (head ds) -> Expr var mot) :: CaseArms (tail ds) var mot
+
+export
+Case : {0 var : VarTy tv} -> {0 n : Nat} -> {ds : Vect n (Ty tv Val)} -> {0 motive : Ty tv u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
+Case e [] {ds} =
+  Absurd $ rewrite (sym $ invertVectZ ds) in e
+Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)

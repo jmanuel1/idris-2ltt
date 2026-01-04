@@ -11,37 +11,15 @@ import Data.Vect.Quantifiers
 import TwoLTT.Expr
 import TwoLTT.Gen
 import TwoLTT.JoinPoints
+import TwoLTT.Monad.Identity
+import TwoLTT.Monad.Improve
+import TwoLTT.Monad.Maybe
+import TwoLTT.Monad.State
 import TwoLTT.Types
 
 %default total
 
-0 CaseArms : {n : Nat} -> (0 ds : Vect n (Ty tyvar Val)) -> VarTy tyvar -> Ty tyvar u -> Vect n Type
-CaseArms {n = 0} _ var mot = []
-CaseArms {n = S n} ds var mot =
-  (var _ (head ds) -> Expr var mot) :: CaseArms (tail ds) var mot
 
-Case : {0 var : VarTy tv} -> {0 n : Nat} -> {ds : Vect n (Ty tv Val)} -> {0 motive : Ty tv u} -> (scrutinee : Expr var (Sum ds)) -> HVect (CaseArms ds var motive) -> Expr var motive
-Case e [] {ds} =
-  Absurd $ rewrite (sym $ invertVectZ ds) in e
-Case e (arm :: arms) = Match e arm (\right => Case (Var right) arms)
-
--- https://github.com/AndrasKovacs/staged/blob/main/icfp24paper/supplement/haskell-cftt/CFTT/Improve.hs#L17
-interface MonadGen Val var m => Improve (0 var : VarTy tyvar) (0 f : Ty tyvar Val -> Ty tyvar u) (0 m : Type -> Type) | m where
-  up : {a : Ty _ Val} -> Expr var (f a) -> m (Expr var a)
-  down : (a : Ty _ Val) -> m (Expr var a) -> Expr var (f a)
-
-interface Split (0 a : Ty tyvar Val) where
-  0 SplitTo : VarTy tyvar -> Type
-  split : (0 var : VarTy _) -> Expr var a -> Gen Val var (SplitTo var)
-
-data IdentityTag : Type where
-
-Identity : Ty tyvar Val -> Ty tyvar Val
-Identity a = Newtype IdentityTag a
-
-Improve var Identity (Gen Val var) where
-  up x = pure (Unwrap x)
-  down a x = unGen x _ (Wrap _)
 
 List : Ty tyvar Val -> Ty tyvar Val
 List a = Fix (\list => Sum [One, Product [a, TyVar list]])
@@ -80,52 +58,9 @@ namespace TreeExample
   Nat : Ty tyVar Val
   Nat = Fix (\nat => Sum [One, TyVar nat])
 
-  data StateTTag : Type where
 
-  StateT : Ty var Val -> (Ty var Val -> Ty var Val) -> Ty var Val -> Ty var Comp
-  StateT s m a = Newtype StateTTag $ Fun s (m (Product [a, s]))
 
-  Maybe : Ty tyvar Val -> Ty tyvar Val
-  Maybe a = Sum [One, a]
 
-  nothing : {0 a : Ty tyvar Val} -> Expr var (Maybe a)
-  nothing = Left TT
-
-  just : {0 a : Ty tyvar Val} -> Expr var a -> Expr var (Maybe a)
-  just a = Right $ Left a
-
-  {a : Ty tyvar Val} -> Split (Maybe a) where
-    SplitTo var = Maybe (Expr var a)
-    split _ ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
-
-  data MaybeTTag : Type where
-
-  public export
-  MaybeT : (Ty var Val -> Ty var u) -> Ty var Val -> Ty var u
-  MaybeT m a = Newtype MaybeTTag $ m (Maybe a)
-
-  runMaybeT : {0 m : Ty tv Val -> Ty tv u} -> {0 a : Ty tv Val} -> Expr var (MaybeT m a) -> Expr var (m (Maybe a))
-  runMaybeT = Unwrap
-
-  MkMaybeT : {0 m : Ty tv Val -> Ty tv u} -> {0 a : Ty tv Val} -> Expr var (m (Maybe a)) -> Expr var (MaybeT m a)
-  MkMaybeT = Wrap _
-
-  MonadGen u var m => MonadGen u var (MaybeT m) where
-    liftGen = lift . liftGen
-
-  -- NOTE: For some reason, auto search can't find this, and it's rather
-  -- annoying.
-  [improveMaybeInstance]
-  {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => Improve var (MaybeT f) (MaybeT m) where
-    up x = MkMaybeT $ do
-      ma <- up $ runMaybeT {m = f} x
-      liftGen $ split _ ma
-    down _ (MkMaybeT x) = MkMaybeT {m = f} $ down _ $ x >>= \case
-      Nothing => pure nothing
-      Just a => pure (just a)
-
-  fail : {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => {a : Ty tv Val} -> Expr var (MaybeT f a)
-  fail = down _ @{improveMaybeInstance} {m = MaybeT m} nothing
 
   MonadGen u var m => MonadGen u var (StateT s m) where
     liftGen = lift . liftGen
