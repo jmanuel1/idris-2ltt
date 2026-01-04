@@ -1,7 +1,7 @@
 module TwoLTT.Types
 
 import Data.String
-import Data.Vect
+import public Data.Vect
 
 %default total
 

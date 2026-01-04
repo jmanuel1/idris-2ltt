@@ -2,7 +2,7 @@ module TwoLTT.Expr
 
 import public Data.Vect
 ------ ^ for matching on constructors
-import Data.Vect.Quantifiers
+import public Data.Vect.Quantifiers
 import TwoLTT.Types
 import public TwoLTT.Types.Sub
 --     ^ for instance search

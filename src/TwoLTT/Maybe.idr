@@ -3,7 +3,7 @@ module TwoLTT.Maybe
 import Data.Vect
 import Data.Vect.Quantifiers
 import TwoLTT.Expr
-import TwoLTT.Split
+import public TwoLTT.Split
 import TwoLTT.Gen
 import TwoLTT.Types
 
@@ -20,6 +20,5 @@ just : {0 a : Ty tyvar Val} -> Expr var a -> Expr var (Maybe a)
 just a = Right $ Left a
 
 export
-{a : Ty tyvar Val} -> Split (Maybe a) where
-  SplitTo var = Maybe (Expr var a)
-  split _ ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just (Var a))]
+splitMaybe : {a : Ty tyvar Val} -> SplitTy (\var => Maybe (var _ a)) (Maybe a)
+splitMaybe _ ma = MkGen $ \_, k => Case ma [\_ => k Nothing, \a => k (Just a)]

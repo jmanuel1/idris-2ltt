@@ -1,10 +1,9 @@
 module TwoLTT.Split
 
 import TwoLTT.Gen
-import TwoLTT.Expr
+import public TwoLTT.Expr -- for writing the SplitTo type
 import public TwoLTT.Types
 
 public export
-interface Split (0 a : Ty tyvar Val) where
-  0 SplitTo : VarTy tyvar -> Type
-  split : (0 var : VarTy _) -> Expr var a -> Gen Val var (SplitTo var)
+0 SplitTy : (SplitTo : VarTy tyvar -> Type) -> Ty tyvar Val -> Type
+SplitTy SplitTo@_ a = (0 var : VarTy tyvar) -> Expr var a -> Gen Val var (SplitTo var)

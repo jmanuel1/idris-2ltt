@@ -32,7 +32,7 @@ export
 {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => Improve var (MaybeT f) (MaybeT m) where
   up x = MkMaybeT $ do
     ma <- up $ runMaybeT {m = f} x
-    liftGen $ split {a = _} _ ma
+    liftGen $ map (map Var) $ splitMaybe _ ma
   down _ (MkMaybeT x) = MkMaybeT {m = f} $ down _ $ x >>= \case
     Nothing => pure nothing
     Just a => pure (just a)
