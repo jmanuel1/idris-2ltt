@@ -12,13 +12,13 @@ import TwoLTT.Bool
 import TwoLTT.Expr
 import TwoLTT.Gen
 import TwoLTT.JoinPoints
-import TwoLTT.List
-import TwoLTT.Monad.Identity
+import public TwoLTT.List
+import public TwoLTT.Monad.Identity
 import TwoLTT.Monad.Improve
-import TwoLTT.Monad.Maybe
-import TwoLTT.Monad.State
-import TwoLTT.Nat
-import TwoLTT.Tree
+import public TwoLTT.Monad.Maybe
+import public TwoLTT.Monad.State
+import public TwoLTT.Nat
+import public TwoLTT.Tree
 import TwoLTT.Types
 
 %default total

@@ -16,8 +16,6 @@ etaExpand {ty = (Fun x {u = Comp} y)} (Lam x e) = Lam x (\x => etaExpand (e x))
 etaExpand {ty = (Fun x y)} f@(Lam x e) = f
 etaExpand {ty = (Fun x {u = Comp} y)} e = Lam x (\x => etaExpand (App e (Var x)))
 etaExpand {ty = (Fun x y)} e = Lam x (\x => (App e (Var x)))
-etaExpand {ty = (Newtype tag x)} (Wrap tag e) = Wrap tag (etaExpand e)
-etaExpand {ty = (Newtype tag x)} e = Wrap tag (etaExpand (Unwrap e))
 
 etaExpand' {u = Comp} e = etaExpand $ etaExpandRec e
 etaExpand' {u = Val} e = etaExpandRec e
@@ -35,8 +33,6 @@ etaExpandRec TT = TT
 etaExpandRec (Prod x y) = Prod (etaExpandRec x) (etaExpandRec y)
 etaExpandRec (First x) = First (etaExpandRec x)
 etaExpandRec (Rest x) = Rest (etaExpandRec x)
-etaExpandRec (Wrap tag x) = Wrap tag (etaExpand' x)
-etaExpandRec (Unwrap x) = Unwrap (etaExpand' x)
 etaExpandRec (Roll x sub) = Roll (etaExpandRec x) sub
 etaExpandRec (Unroll x sub) = Unroll (etaExpandRec x) sub
 
@@ -55,20 +51,13 @@ etaExpandCompLets TT = TT
 etaExpandCompLets (Prod x y) = Prod (etaExpandCompLets x) (etaExpandCompLets y)
 etaExpandCompLets (First x) = First (etaExpandCompLets x)
 etaExpandCompLets (Rest x) = Rest $ etaExpandCompLets x
-etaExpandCompLets (Wrap tag x) = Wrap tag (etaExpandCompLets x)
-etaExpandCompLets (Unwrap x) = Unwrap (etaExpandCompLets x)
 etaExpandCompLets (Roll x sub) = Roll (etaExpandCompLets x) sub
 etaExpandCompLets (Unroll x sub) = Unroll (etaExpandCompLets x) sub
 
 etaExpandNonVariableAppHeads : {u : U} -> {0 ty : Ty tv u} -> Expr var ty -> Expr var ty
 etaExpandNonVariableAppHeads (App f@(Var _) x) = App f (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (App f@(App _ _) x) = App (etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
-etaExpandNonVariableAppHeads (App f@(Unwrap _) x) = App (etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (App f x) = App (etaExpand' $ etaExpandNonVariableAppHeads f) (etaExpandNonVariableAppHeads x)
-etaExpandNonVariableAppHeads {u = Comp} e@(Unwrap (Var x)) =  e
-etaExpandNonVariableAppHeads {u = Comp} (Unwrap f@(App _ _)) = Unwrap (etaExpandNonVariableAppHeads f)
-etaExpandNonVariableAppHeads {u = Comp} (Unwrap f@(Unwrap _)) = Unwrap (etaExpandNonVariableAppHeads f)
-etaExpandNonVariableAppHeads {u = Comp} (Unwrap x) = Unwrap (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (LetRec a t u) = LetRec a (\x => etaExpandNonVariableAppHeads (t x)) (\x => etaExpandNonVariableAppHeads $ u x)
 etaExpandNonVariableAppHeads (Let a t u) = Let a (etaExpandNonVariableAppHeads t) (\x => (etaExpandNonVariableAppHeads (u x)))
 etaExpandNonVariableAppHeads (Absurd x) = Absurd (etaExpandNonVariableAppHeads x)
@@ -81,8 +70,6 @@ etaExpandNonVariableAppHeads TT = TT
 etaExpandNonVariableAppHeads (Prod x y) = Prod (etaExpandNonVariableAppHeads x) (etaExpandNonVariableAppHeads y)
 etaExpandNonVariableAppHeads (First x) = First (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (Rest x) = Rest (etaExpandNonVariableAppHeads x)
-etaExpandNonVariableAppHeads (Wrap tag x) = Wrap tag (etaExpandNonVariableAppHeads x)
-etaExpandNonVariableAppHeads (Unwrap x) = Unwrap (etaExpandNonVariableAppHeads x)
 etaExpandNonVariableAppHeads (Roll x sub) = Roll (etaExpandNonVariableAppHeads x) sub
 etaExpandNonVariableAppHeads (Unroll x sub) = Unroll (etaExpandNonVariableAppHeads x) sub
 
@@ -98,8 +85,6 @@ deepenElims (App (LetRec x t u) arg@(Var _)) = LetRec x (\x => deepenElims $ t x
 deepenElims (App (Let x t u) arg@(Var _)) = Let x (deepenElims t) (\x => deepenElims $ App (u x) arg)
 deepenElims (App (Match x f g) arg@(Var _)) = Match (deepenElims x) (\x => deepenElims $ App (f x) arg) (\x => deepenElims $ App (g x) arg)
 deepenElims (App (Lam a t) (Var arg)) = deepenElims $ t arg
--- Computational unwrap can be part of a saturated call spine
--- deepenElims (App f@(Unwrap _) arg@(Var _)) = Let _ (deepenElims f) $ \x => App (Var x) $ deepenElims arg
 deepenElims (App f arg@(Var _)) = App (deepenElims f) arg
 deepenElims (App f arg) = Let _ (deepenElims arg) $ \x => App (deepenElims f) $ Var x
 deepenElims (Left x) = Left $ deepenElims x
@@ -108,12 +93,6 @@ deepenElims TT = TT
 deepenElims (Prod x y) = Prod (deepenElims x) (deepenElims y)
 deepenElims (First x) = First $ deepenElims x
 deepenElims (Rest x) = Rest $ deepenElims x
-deepenElims (Wrap tag x) = Wrap tag $ deepenElims x
-deepenElims {u = Comp} (Unwrap (LetRec x t u)) = LetRec x (\x => deepenElims $ t x) (\x => deepenElims $ Unwrap $ u x)
-deepenElims {u = Comp} (Unwrap (Let x t u)) = Let x (deepenElims t) (\x => deepenElims $ Unwrap $ u x)
-deepenElims {u = Comp} (Unwrap (Match x f g)) = Match (deepenElims x) (\x => deepenElims $ Unwrap $ f x) (\x => deepenElims $ Unwrap $ g x)
-deepenElims {u = Comp} (Unwrap (Wrap tag x)) = deepenElims x
-deepenElims (Unwrap x) = Unwrap $ deepenElims x
 deepenElims (Roll x sub) = Roll (deepenElims x) sub
 deepenElims (Unroll x sub) = Unroll (deepenElims x) sub
 
@@ -157,15 +136,9 @@ isEtaLong {u = Val} TT = Right ()
 isEtaLong {u = Val} (Prod x y) = isEtaLong x >> isEtaLong y
 isEtaLong {u = Val} (First x) = isEtaLong x
 isEtaLong {u = Val} (Rest x) = isEtaLong x
-isEtaLong {u = Val} (Wrap tag x) = isEtaLong x
-isEtaLong {u = Val} (Unwrap x) = isEtaLong x
 isEtaLong {u = Val} (Roll x sub) = isEtaLong x
 isEtaLong {u = Val} (Unroll x sub) = isEtaLong x
 isEtaLong {u = Comp} (Lam x t) = isEtaLong (t neutral)
-isEtaLong {u = Comp} (Wrap tag x) = isEtaLong x
--- spine of computation eliminator
--- FIXME: Too loose
-isEtaLong {u = Comp} (Unwrap x) = Right ()
 isEtaLong {u = Comp} e = Left (NotEtaLong (Evidence _ (Evidence _ (Evidence _ e))))
 
 export
@@ -182,7 +155,6 @@ areCallsSaturated (Lam x t) = areCallsSaturated (t neutral)
 areCallsSaturated (Var x) = Right ()
 areCallsSaturated (App (Var f) arg) = areCallsSaturated arg
 areCallsSaturated (App f@(App _ _) arg) = areCallsSaturated f >> areCallsSaturated arg
-areCallsSaturated (App f@(Unwrap _) arg) = areCallsSaturated f >> areCallsSaturated arg
 areCallsSaturated e@(App f arg) = Left (NotSatCall $ Evidence _ (Evidence _ (Evidence _ e)))
 areCallsSaturated (Left x) = areCallsSaturated x
 areCallsSaturated (Right x) = areCallsSaturated x
@@ -190,11 +162,5 @@ areCallsSaturated TT = Right ()
 areCallsSaturated (Prod x y) = areCallsSaturated x >> areCallsSaturated y
 areCallsSaturated (First x) = areCallsSaturated x
 areCallsSaturated (Rest x) = areCallsSaturated x
-areCallsSaturated (Wrap tag x) = areCallsSaturated x
-areCallsSaturated {u = Comp} (Unwrap x@(App _ _)) = areCallsSaturated x
-areCallsSaturated {u = Comp} (Unwrap x@(Unwrap _)) = areCallsSaturated x
-areCallsSaturated {u = Comp} (Unwrap (Var _)) = Right ()
-areCallsSaturated {u = Comp} e@(Unwrap x) = Left (NotSatCall $ Evidence _ (Evidence _ (Evidence _ e)))
-areCallsSaturated (Unwrap x) = areCallsSaturated x
 areCallsSaturated (Roll x sub) = areCallsSaturated x
 areCallsSaturated (Unroll x sub) = areCallsSaturated x
