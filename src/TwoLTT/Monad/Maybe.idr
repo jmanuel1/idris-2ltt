@@ -9,6 +9,8 @@ import TwoLTT.Monad.Improve
 import TwoLTT.Split
 import TwoLTT.Types
 
+%default total
+
 export
 MaybeT : (Ty var Val -> Ty var u) -> Ty var Val -> Ty var u
 MaybeT m a = m (Maybe a)
@@ -25,18 +27,17 @@ export
 MonadGen u var m => MonadGen u var (MaybeT m) where
   liftGen = lift . liftGen
 
--- NOTE: For some reason, auto search can't find this, and it's rather
--- annoying.
 export
-[improveMaybeInstance]
-{0 f : Ty tv Val -> Ty tv u} -> Improve var f m => Improve var (MaybeT f) (MaybeT m) where
+(i : Improve tv var m) => Improve tv var (MaybeT m) where
+  Univ = Univ @{i}
+  F = MaybeT (F @{i})
   up x = MkMaybeT $ do
-    ma <- up $ runMaybeT {m = f} x
+    ma <- up x
     liftGen $ map (map Var) $ splitMaybe _ ma
-  down _ (MkMaybeT x) = MkMaybeT {m = f} $ down _ $ x >>= \case
+  down _ (MkMaybeT x) = down _ $ x >>= \case
     Nothing => pure nothing
     Just a => pure (just a)
 
 export
-fail : {0 f : Ty tv Val -> Ty tv u} -> Improve var f m => {a : Ty tv Val} -> Expr var (MaybeT f a)
-fail = down _ @{improveMaybeInstance} {m = MaybeT m} nothing
+fail : (i : Improve tv var m) => {a : Ty tv Val} -> Expr var (MaybeT (F @{i}) a)
+fail = down {m = MaybeT m} a nothing

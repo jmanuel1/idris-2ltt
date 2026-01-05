@@ -41,7 +41,7 @@ namespace TreeExample
   f : Expr var (Fun (Tree Nat) (StateT (List Nat) (MaybeT Identity) (Tree Nat)))
   f =
     LetRec _ (\f =>
-      Lam (Tree Nat) $ \t => down @{improveStateInstance @{improveMaybeInstance}} _ $ do
+      Lam (Tree Nat) $ \t => down _ $ do
         treeSplit <- liftGen {m = StateT (Expr var (List Nat)) (MaybeT (Gen Val var)), var} $ splitTree var $ Var t
         case treeSplit of
           Leaf => pure leaf
@@ -57,6 +57,6 @@ namespace TreeExample
               Just (n, ns) => do
                 put $ Var ns
                 pure $ Var n
-            l <- up @{improveStateInstance @{improveMaybeInstance}} (App (Var f) $ Var l)
-            r <- up @{improveStateInstance @{improveMaybeInstance}} (App (Var f) $ Var r)
+            l <- up (App (Var f) $ Var l)
+            r <- up (App (Var f) $ Var r)
             pure (node n l r)) Var

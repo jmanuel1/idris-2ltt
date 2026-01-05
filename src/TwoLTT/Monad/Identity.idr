@@ -9,6 +9,8 @@ Identity : Ty tyvar Val -> Ty tyvar Val
 Identity a = a
 
 export
-Improve var Identity (Gen Val var) where
+Improve tv var (Gen Val var) where
+  Univ = Val
+  F = Identity
   up x = pure x
   down a x = unGen x _ id
