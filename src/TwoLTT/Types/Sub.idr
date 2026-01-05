@@ -22,7 +22,6 @@ data Sub : (0 t1 : var -> Ty var Val) -> Ty var Val -> Ty var Val -> Type where
     Sub (\a => Product (t1 a :: t2s a)) t (Product (t1' :: t2s'))
   SubReplace : Sub (\a => TyVar a) t t
   SubConst : Sub (\_ => t1) t t1
-  SubNewtype : Sub t1 t t1' -> Sub (\a => Newtype tag (t1 a)) t (Newtype tag t1')
 
 %name Sub sub
 

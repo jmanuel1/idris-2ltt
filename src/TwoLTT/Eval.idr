@@ -27,7 +27,6 @@ InterpValTy (Fix f) = Fix (\t => (InterpValTy (f t)))
 InterpValTy (Product ds) = interpProductTy ds
 InterpValTy (Sum ds) = interpSumTy ds
 InterpValTy (TyVar x) = x
-InterpValTy (Newtype tag x) = (InterpValTy x)
 
 interpProductTy [] = ()
 interpProductTy (t :: ts) = ((InterpValTy t), interpProductTy ts)
@@ -48,7 +47,6 @@ fix f x = f (fix f) x
 interpCompTy (Fun arg {u = Comp} ret) =
   ((_ ** interpTy arg :: snd (fst $ interpCompTy ret)), snd $ interpCompTy ret)
 interpCompTy (Fun arg {u = Val} ret) = ((_ ** [interpTy arg]), InterpValTy ret)
-interpCompTy (Newtype _ ty) = interpCompTy ty
 
 covering
 0 subInterpTy : Sub f s ty -> (InterpValTy (f (InterpValTy s))) === (InterpValTy ty)
@@ -63,7 +61,6 @@ subInterpTy (SubSum sub t2s sub1) =
 subInterpTy (SubProd sub t2s sub1) = cong2 (,) (subInterpTy sub) (subInterpTy sub1)
 subInterpTy SubReplace = Refl
 subInterpTy SubConst = Refl
-subInterpTy (SubNewtype sub) = (subInterpTy sub)
 
 covering
 eval : {u : U} -> {0 ty : Ty Type u} -> Expr (\u, ty => interpTy ty) ty -> (interpTy ty)
@@ -90,7 +87,6 @@ Uninhabited (Expr (\u, ty => interpTy ty) (Sum [])) where
     absurd x
   uninhabited (App f arg) = absurd (evalComp f [eval arg])
   uninhabited (First x) = absurd (fst $ evalVal x)
-  uninhabited (Unwrap x) = absurd (evalVal x)
   uninhabited (Unroll {f} x sub) =
     let x' = unroll $ evalVal x
     in void $
@@ -116,8 +112,6 @@ evalVal TT = ()
 evalVal (Prod x y) = (evalVal x, evalVal y)
 evalVal (First x) = fst (evalVal x)
 evalVal (Rest x) = snd (evalVal x)
-evalVal (Wrap tag x) = evalVal x
-evalVal (Unwrap x) = evalVal x
 evalVal (Roll x sub) = Roll $ rewrite subInterpTy sub in evalVal x
 evalVal (Unroll x sub) =
   let x' = unroll $ evalVal x
@@ -139,5 +133,3 @@ evalComp (Lam a {u = Val} t) (arg :: []) = evalVal (t arg)
 evalComp (Lam a {u = Comp} t) (arg :: args) = evalComp (t arg) args
 evalComp (Var x) arg = x arg
 evalComp (App f x) arg = evalComp f (evalVal x :: arg)
-evalComp (Wrap tag x) arg = evalComp x arg
-evalComp (Unwrap x) arg = evalComp x arg

@@ -1,6 +1,6 @@
 module TwoLTT.Gen
 
-import TwoLTT.Expr
+import public TwoLTT.Expr
 import TwoLTT.Types
 
 %default total
